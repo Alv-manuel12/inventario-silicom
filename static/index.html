@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario — Silicom</title>
+<script src="/libs/qrcode.min.js"></script>
+<script src="/libs/jsQR.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sb:#1A4F9C;--sb2:#163F7A;--sb-text:rgba(255,255,255,.8);--sb-act:rgba(255,255,255,.15);--sb-icon:rgba(255,255,255,.5);
+  --blue:#1E6EC8;--blue-l:#2E8FD4;--blue-p:#E8F4FB;--blue-g:#F0F7FC;
+  --ink:#111827;--ink2:#374151;--ink3:#6B7280;--ink4:#9CA3AF;
+  --border:#E5E7EB;--border2:#D1D5DB;--bg:#F8FAFB;--card:#fff;
+  --green:#059669;--green-bg:#ECFDF5;--yellow:#D97706;--yellow-bg:#FFFBEB;
+  --red:#DC2626;--red-bg:#FEF2F2;--purple:#7C3AED;--purple-bg:#F5F3FF;
+  --orange:#EA580C;--orange-bg:#FFF7ED;
+  --sidebar-w:220px;--topbar-h:58px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;}
+a{color:inherit;text-decoration:none;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+
+/* Layout */
+.layout{display:flex;min-height:100vh;}
+.sidebar{width:var(--sidebar-w);background:var(--sb);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;z-index:20;transition:transform .25s;}
+.sb-logo{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,.1);}
+.sb-logo-co{font-weight:700;font-size:15px;color:#fff;letter-spacing:.05em;text-transform:uppercase;}
+.sb-logo-sub{font-size:10px;color:var(--sb-icon);margin-top:2px;letter-spacing:.03em;}
+.sb-nav{padding:10px 0;flex:1;overflow-y:auto;}
+.sb-section{padding:14px 16px 6px;font-size:10px;font-weight:600;color:var(--sb-icon);text-transform:uppercase;letter-spacing:.08em;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;color:var(--sb-text);border-radius:6px;margin:1px 8px;cursor:pointer;transition:background .15s;}
+.nav-item:hover{background:var(--sb-act);}
+.nav-item.active{background:var(--sb-act);color:#fff;font-weight:600;}
+.nav-item .ni-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0;}
+.nav-item .ni-label{font-size:13px;}
+.sb-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:var(--sb-icon);}
+.main{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-width:0;}
+.topbar{height:var(--topbar-h);background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:10;}
+.topbar-title{font-weight:700;font-size:16px;flex:1;}
+.topbar-search{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:6px 12px;min-width:240px;}
+.topbar-search input{border:none;background:transparent;outline:none;font-size:13px;width:100%;color:var(--ink);}
+.topbar-search .si{color:var(--ink4);}
+.content{padding:24px;flex:1;}
+.section{display:none;}.section.active{display:block;}
+
+/* Cards stat */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:4px;}
+.stat-card .sc-val{font-size:28px;font-weight:700;color:var(--blue);}
+.stat-card .sc-lbl{font-size:12px;color:var(--ink3);}
+.stat-card .sc-icon{font-size:22px;margin-bottom:6px;}
+
+/* Tables */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px;}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-weight:600;font-size:14px;}
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap;}
+td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#FAFBFC;}
+.code{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink3);}
+.brand-badge{display:inline-block;font-size:10px;font-weight:600;color:var(--blue);background:var(--blue-p);border-radius:4px;padding:1px 6px;}
+.stock-num{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;}
+.stock-num.low{color:var(--red);}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:var(--green-bg);color:var(--green);}
+.badge-yellow{background:var(--yellow-bg);color:var(--yellow);}
+.badge-red{background:var(--red-bg);color:var(--red);}
+.badge-blue{background:var(--blue-p);color:var(--blue);}
+.badge-purple{background:var(--purple-bg);color:var(--purple);}
+.badge-orange{background:var(--orange-bg);color:var(--orange);}
+.badge-gray{background:var(--bg);color:var(--ink3);border:1px solid var(--border);}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;}
+.btn:hover{opacity:.88;}
+.btn-primary{background:var(--blue);color:#fff;}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--ink2);}
+.btn-red{background:var(--red);color:#fff;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-icon{padding:5px 8px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--ink3);}
+
+/* Filters */
+.filter-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+.filter-btn{padding:6px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--card);color:var(--ink3);font-size:12px;font-weight:500;cursor:pointer;}
+.filter-btn.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+.search-input{padding:7px 12px;border-radius:8px;border:1px solid var(--border2);font-size:13px;color:var(--ink);outline:none;background:var(--card);}
+.search-input:focus{border-color:var(--blue);}
+select.search-input{cursor:pointer;}
+
+/* Forms */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.form-grid.cols3{grid-template-columns:1fr 1fr 1fr;}
+.form-grid.cols1{grid-template-columns:1fr;}
+.fg{display:flex;flex-direction:column;gap:5px;}
+.fg label{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;}
+.fg input,.fg select,.fg textarea{padding:9px 11px;border-radius:8px;border:1px solid var(--border2);font-size:13px;color:var(--ink);outline:none;background:var(--card);}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--blue);}
+.fg textarea{resize:vertical;min-height:70px;}
+.fg.span2{grid-column:span 2;}
+
+/* Modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--card);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.modal-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-weight:700;font-size:15px;}
+.modal-close{background:none;border:none;font-size:20px;color:var(--ink3);cursor:pointer;line-height:1;}
+.modal-body{padding:20px;}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+
+/* Scan */
+.scan-container{max-width:500px;margin:0 auto;}
+.scan-box{background:#0D1F35;border-radius:12px;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;margin-bottom:14px;}
+#video{width:100%;height:100%;object-fit:cover;display:none;}
+.scan-frame{position:absolute;inset:18%;border:2.5px solid #5BB8E4;border-radius:12px;pointer-events:none;display:none;}
+.scan-ph{text-align:center;color:rgba(255,255,255,.4);font-size:13.5px;line-height:1.7;padding:30px;}
+.scan-ph-ico{font-size:52px;display:block;margin-bottom:12px;opacity:.3;}
+.scan-result-card{background:var(--card);border:2px solid var(--blue);border-radius:12px;padding:18px;margin-bottom:14px;}
+.sr-name{font-weight:700;font-size:16px;}
+.sr-meta{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap;}
+.type-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.type-btn{padding:12px;border-radius:8px;border:2px solid var(--border2);background:var(--bg);font-weight:600;font-size:13px;cursor:pointer;text-align:center;transition:all .15s;}
+.type-btn.active-entrada{border-color:var(--green);background:var(--green-bg);color:var(--green);}
+.type-btn.active-salida{border-color:var(--red);background:var(--red-bg);color:var(--red);}
+
+/* Kanban compras */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.k-col{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;}
+.k-col-title{font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.k-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:box-shadow .15s;}
+.k-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.1);}
+.k-card-name{font-weight:600;font-size:13px;margin-bottom:4px;}
+.k-card-meta{font-size:11px;color:var(--ink3);}
+
+/* Proyectos */
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+.proj-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:box-shadow .15s;}
+.proj-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);}
+.proj-name{font-weight:700;font-size:15px;margin-bottom:6px;}
+.proj-desc{font-size:12px;color:var(--ink3);margin-bottom:10px;}
+.proj-stats{display:flex;gap:12px;}
+.proj-stat{font-size:11px;color:var(--ink3);}
+.proj-stat strong{color:var(--ink2);}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.3);}
+.toast.show{opacity:1;}
+.toast.success{background:var(--green);}
+.toast.error{background:var(--red);}
+
+/* Mobile sidebar toggle */
+.sb-toggle{display:none;position:fixed;top:14px;left:14px;z-index:25;background:var(--sb);border:none;border-radius:8px;padding:8px;color:#fff;font-size:18px;}
+.sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:18;}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);}
+  .sidebar.open{transform:none;}
+  .sb-toggle{display:flex;}
+  .sb-overlay.show{display:block;}
+  .main{margin-left:0;}
+  .topbar{padding-left:56px;}
+  .kanban{grid-template-columns:1fr 1fr;}
+  .form-grid{grid-template-columns:1fr;}
+  .form-grid.cols3{grid-template-columns:1fr;}
+  .fg.span2{grid-column:span 1;}
+  .stat-grid{grid-template-columns:1fr 1fr;}
+}
+@media(max-width:480px){
+  .kanban{grid-template-columns:1fr;}
+  .stat-grid{grid-template-columns:1fr;}
+}
+
+.empty-state{text-align:center;padding:48px 20px;color:var(--ink4);}
+.empty-state .es-icon{font-size:48px;margin-bottom:12px;display:block;}
+.page-actions{display:flex;gap:8px;align-items:center;}
+.divider{height:1px;background:var(--border);margin:16px 0;}
+.text-sm{font-size:12px;color:var(--ink3);}
+.fw{width:100%;}
+.gap8{gap:8px;}
+</style>
+</head>
+<body>
+
+<button class="sb-toggle" id="sbToggle">☰</button>
+<div class="sb-overlay" id="sbOverlay" onclick="closeSidebar()"></div>
+
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-co">Silicom</div>
+    <div class="sb-logo-sub">Control de Inventario QR</div>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-section">Principal</div>
+    <div class="nav-item active" data-sec="dashboard"><span class="ni-icon">📊</span><span class="ni-label">Dashboard</span></div>
+    <div class="nav-item" data-sec="productos"><span class="ni-icon">📦</span><span class="ni-label">Productos</span></div>
+    <div class="nav-item" data-sec="escanear"><span class="ni-icon">📱</span><span class="ni-label">Escanear</span></div>
+    <div class="sb-section">Seguimiento</div>
+    <div class="nav-item" data-sec="llegadas"><span class="ni-icon">🚚</span><span class="ni-label">Llegadas</span></div>
+    <div class="nav-item" data-sec="proyectos"><span class="ni-icon">🏗️</span><span class="ni-label">Proyectos</span></div>
+    <div class="nav-item" data-sec="compras"><span class="ni-icon">🛒</span><span class="ni-label">Compras</span></div>
+  </div>
+  <div class="sb-footer">v2.0 — Silicom</div>
+</nav>
+
+<div class="main">
+<div class="topbar">
+  <div class="topbar-title" id="topbarTitle">Dashboard</div>
+  <div class="topbar-search">
+    <span class="si">🔍</span>
+    <input id="globalSearch" placeholder="Buscar producto..." oninput="globalSearch(this.value)">
+  </div>
+  <div class="page-actions" id="topbarActions"></div>
+</div>
+
+<div class="content">
+
+<!-- DASHBOARD -->
+<div class="section active" id="section-dashboard">
+  <div class="stat-grid" id="dashStats"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div class="card">
+      <div class="card-header"><span class="card-title">⚡ Últimos movimientos</span></div>
+      <div class="table-wrap"><table id="dashMovTable">
+        <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th></tr></thead>
+        <tbody id="dashMovBody"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">⚠️ Stock bajo</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Producto</th><th>Stock</th></tr></thead>
+        <tbody id="dashLowBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- PRODUCTOS -->
+<div class="section" id="section-productos">
+  <div class="filter-row">
+    <input class="search-input fw" id="prodSearch" placeholder="🔍  Buscar por nombre, código, marca, ubicación..." oninput="renderProducts()">
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title" id="prodCount">Productos</span>
+      <button class="btn btn-primary btn-sm" onclick="openModal('modalAddProduct')">+ Agregar producto</button>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr>
+        <th>Código</th><th>Nombre</th><th>Marca</th><th>Ubicación</th><th>Stock</th><th>Acciones</th>
+      </tr></thead>
+      <tbody id="prodBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ESCANEAR -->
+<div class="section" id="section-escanear">
+  <div class="scan-container">
+    <div class="scan-box">
+      <video id="video" playsinline></video>
+      <div class="scan-frame" id="scanFrame"></div>
+      <div class="scan-ph" id="scanPH">
+        <span class="scan-ph-ico">⬜</span>
+        Activá la cámara y apuntá<br>al código QR del producto
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="btn btn-primary fw" id="btnStart">📷 Activar cámara</button>
+      <button class="btn btn-outline" id="btnStop" style="display:none" onclick="stopScan()">Detener</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <input class="search-input" id="manualCode" placeholder="o ingresá el código manualmente" style="flex:1">
+      <button class="btn btn-outline" onclick="manualLookup()">Buscar</button>
+    </div>
+    <div id="scanResult" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- LLEGADAS -->
+<div class="section" id="section-llegadas">
+  <div class="filter-row">
+    <button class="filter-btn" data-filter="week" onclick="setMovFilter('week',this)">Última semana</button>
+    <button class="filter-btn active" data-filter="2weeks" onclick="setMovFilter('2weeks',this)">Últimas 2 semanas</button>
+    <button class="filter-btn" data-filter="month" onclick="setMovFilter('month',this)">Último mes</button>
+    <button class="filter-btn" data-filter="all" onclick="setMovFilter('all',this)">Todas</button>
+    <select class="search-input" id="movTypeFilter" onchange="loadMovements()" style="margin-left:auto;">
+      <option value="">Todos los tipos</option>
+      <option value="entrada">Entradas</option>
+      <option value="salida">Salidas</option>
+      <option value="ajuste">Ajustes</option>
+    </select>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title" id="movCount">Movimientos</span>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr>
+        <th>Fecha</th><th>Producto</th><th>Marca</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th><th>Ubicación</th><th>Notas</th>
+      </tr></thead>
+      <tbody id="movBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- PROYECTOS -->
+<div class="section" id="section-proyectos">
+  <div class="filter-row">
+    <button class="filter-btn active" onclick="setProjFilter('all',this)">Todos</button>
+    <button class="filter-btn" onclick="setProjFilter('activo',this)">Activos</button>
+    <button class="filter-btn" onclick="setProjFilter('completado',this)">Completados</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openModal('modalAddProject')">+ Nuevo proyecto</button>
+  </div>
+  <div id="projDetail" style="display:none;"></div>
+  <div class="proj-grid" id="projGrid"></div>
+</div>
+
+<!-- COMPRAS -->
+<div class="section" id="section-compras">
+  <div class="filter-row">
+    <span style="font-size:13px;color:var(--ink3);">Vista:</span>
+    <button class="filter-btn active" onclick="setComprasView('kanban',this)">Kanban</button>
+    <button class="filter-btn" onclick="setComprasView('tabla',this)">Tabla</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openModal('modalAddCompra')">+ Nueva compra</button>
+  </div>
+  <div id="comprasKanban" class="kanban"></div>
+  <div id="comprasTabla" style="display:none;" class="card">
+    <div class="card-header"><span class="card-title">Órdenes de compra</span></div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Producto</th><th>Proveedor</th><th>Cant.</th><th>Precio</th><th>Estado</th><th>Proyecto</th><th>F.Pedido</th><th>F.Esperada</th><th></th>
+    </tr></thead><tbody id="comprasBody"></tbody></table></div>
+  </div>
+</div>
+
+</div><!-- content -->
+</div><!-- main -->
+</div><!-- layout -->
+
+<!-- MODALS -->
+<div class="modal-bg" id="modalAddProduct">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalProdTitle">Agregar producto</span>
+      <button class="modal-close" onclick="closeModal('modalAddProduct')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProdCode">
+      <div class="form-grid">
+        <div class="fg"><label>Nombre</label><input id="prodName" placeholder="Ej: Borne de carril M6"></div>
+        <div class="fg"><label>Marca / Proveedor</label><input id="prodBrand" placeholder="Ej: P.CONTACT"></div>
+        <div class="fg"><label>Código</label><input id="prodCode" placeholder="Se genera automáticamente"></div>
+        <div class="fg"><label>Stock inicial</label><input id="prodStock" type="number" value="0" min="0"></div>
+        <div class="fg span2"><label>Ubicación / Estantería</label><input id="prodLocation" placeholder="Ej: Estante A3 - Fila 2"></div>
+      </div>
+      <div id="qrZone" style="display:none;margin-top:16px;">
+        <div class="divider"></div>
+        <div style="display:flex;justify-content:center;padding:12px;background:#fff;border-radius:8px;border:1px solid var(--border);" id="qrPreview"></div>
+        <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--blue);margin-top:6px;" id="qrLabel"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px;width:100%;" onclick="downloadQR()">⬇ Descargar QR</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalAddProduct')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProduct()">Guardar producto</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalAddProject">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalProjTitle">Nuevo proyecto</span>
+      <button class="modal-close" onclick="closeModal('modalAddProject')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProjId">
+      <div class="form-grid cols1">
+        <div class="fg"><label>Nombre del proyecto</label><input id="projName" placeholder="Ej: Planta Sur - Tablero Principal"></div>
+        <div class="fg"><label>Descripción</label><textarea id="projDesc" placeholder="Descripción opcional..."></textarea></div>
+        <div class="fg"><label>Estado</label>
+          <select id="projStatus">
+            <option value="activo">Activo</option>
+            <option value="pausado">Pausado</option>
+            <option value="completado">Completado</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalAddProject')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProject()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalAddCompra">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalCompraTitle">Nueva orden de compra</span>
+      <button class="modal-close" onclick="closeModal('modalAddCompra')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editCompraId">
+      <div class="form-grid">
+        <div class="fg span2"><label>Producto</label><input id="compraProducto" placeholder="Nombre del producto a comprar"></div>
+        <div class="fg"><label>Código (si existe)</label><input id="compraCode" placeholder="Opcional"></div>
+        <div class="fg"><label>Proveedor</label><input id="compraSupplier" placeholder="Ej: P.CONTACT"></div>
+        <div class="fg"><label>Cantidad</label><input id="compraQty" type="number" value="1" min="1"></div>
+        <div class="fg"><label>Precio unitario</label><input id="compraPrecio" type="number" value="0" step="0.01"></div>
+        <div class="fg"><label>Moneda</label>
+          <select id="compraCurrency"><option value="USD">USD</option><option value="ARS">ARS</option><option value="EUR">EUR</option></select>
+        </div>
+        <div class="fg"><label>Estado</label>
+          <select id="compraStatus">
+            <option value="pendiente">Pendiente</option>
+            <option value="ordenado">Ordenado</option>
+            <option value="en_transito">En tránsito</option>
+            <option value="recibido">Recibido</option>
+          </select>
+        </div>
+        <div class="fg"><label>Proyecto</label><select id="compraProject"><option value="">Sin proyecto</option></select></div>
+        <div class="fg"><label>Fecha pedido</label><input id="compraOrderDate" type="date"></div>
+        <div class="fg"><label>Fecha esperada</label><input id="compraExpDate" type="date"></div>
+        <div class="fg"><label>Fecha recibido</label><input id="compraRecDate" type="date"></div>
+        <div class="fg span2"><label>Notas</label><textarea id="compraNotas" placeholder="Observaciones..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalAddCompra')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCompra()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalMoveStock">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <span class="modal-title">Ajustar stock</span>
+      <button class="modal-close" onclick="closeModal('modalMoveStock')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="moveCode">
+      <div id="moveProdInfo" style="margin-bottom:14px;padding:12px;background:var(--bg);border-radius:8px;"></div>
+      <div class="type-toggle" style="margin-bottom:14px;">
+        <button class="type-btn active-entrada" id="moveTypeAdd" onclick="setMoveType('add')">➕ Sumar</button>
+        <button class="type-btn" id="moveTypeSub" onclick="setMoveType('sub')">➖ Restar</button>
+        <button class="type-btn" id="moveTypeSet" onclick="setMoveType('set')" style="grid-column:span 2;">📌 Fijar valor exacto</button>
+      </div>
+      <div class="form-grid cols1">
+        <div class="fg"><label>Cantidad</label><input id="moveQty" type="number" value="1" min="0"></div>
+        <div class="fg"><label>Proyecto (opcional)</label><select id="moveProject"><option value="">Sin proyecto</option></select></div>
+        <div class="fg"><label>Ubicación</label><input id="moveLocation" placeholder="Estantería o ubicación"></div>
+        <div class="fg"><label>Notas</label><input id="moveNotes" placeholder="Motivo del movimiento..."></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modalMoveStock')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmMove()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State & globals ───────────────────────────────────────────────────────────
+let products={}, projects=[], purchases=[], movements=[];
+let currentSection='dashboard', movFilter='2weeks', projFilter='all', comprasView='kanban';
+let moveType='add', scanProduct=null, scanMoveType='entrada';
+let scanning=false, stream=null, rafId=null, lastScan=0;
+const cvs=document.createElement('canvas'), cx=cvs.getContext('2d');
+
+// ── API ───────────────────────────────────────────────────────────────────────
+const api = {
+  async get(url){ const r=await fetch(url); return r.json(); },
+  async post(url,d){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); return {ok:r.ok,data:await r.json()}; },
+  async put(url,d){ const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); return {ok:r.ok,data:await r.json()}; },
+  async del(url){ const r=await fetch(url,{method:'DELETE'}); return r.ok; },
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init(){
+  await Promise.all([loadProducts(), loadProjects(), loadDashboard()]);
+  loadMovements();
+  loadPurchases();
+}
+
+async function loadProducts(){
+  const list = await api.get('/api/products');
+  products={};
+  list.forEach(p=>products[p.code]=p);
+  renderProducts();
+  updateProjectDropdowns();
+}
+async function loadProjects(){
+  projects = await api.get('/api/projects');
+  renderProjects();
+  updateProjectDropdowns();
+}
+async function loadMovements(){
+  const type = document.getElementById('movTypeFilter').value;
+  const url = `/api/movements?filter=${movFilter}${type?'&type='+type:''}`;
+  movements = await api.get(url);
+  renderMovements();
+}
+async function loadPurchases(){
+  purchases = await api.get('/api/purchases');
+  renderPurchases();
+}
+async function loadDashboard(){
+  const d = await api.get('/api/dashboard');
+  // Stats
+  const icons=['📦','📊','🚚','🛒'];
+  const labels=['Productos','Unidades en stock','Llegadas esta semana','Compras pendientes'];
+  const vals=[d.total_products, d.total_stock, d.arrivals_week, d.pending_purchases];
+  document.getElementById('dashStats').innerHTML = vals.map((v,i)=>`
+    <div class="stat-card">
+      <div class="sc-icon">${icons[i]}</div>
+      <div class="sc-val">${v}</div>
+      <div class="sc-lbl">${labels[i]}</div>
+    </div>`).join('');
+  // Recent movements
+  const mb=document.getElementById('dashMovBody');
+  mb.innerHTML = d.recent_movements.length ? d.recent_movements.map(m=>`<tr>
+    <td class="text-sm">${fmtDate(m.created_at)}</td>
+    <td><div style="font-weight:500">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
+    <td>${typeBadge(m.type)}</td>
+    <td><span class="stock-num">${m.qty}</span></td>
+    <td class="text-sm">${m.project_name||'—'}</td>
+  </tr>`).join('') : '<tr><td colspan="5" class="empty-state">Sin movimientos</td></tr>';
+  // Low stock
+  document.getElementById('dashLowBody').innerHTML = d.low_stock.length ? d.low_stock.map(p=>`<tr>
+    <td><div style="font-weight:500;font-size:13px;">${esc(p.name)}</div><div class="code">${esc(p.code)}</div></td>
+    <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
+  </tr>`).join('') : '<tr><td colspan="2"><div class="empty-state" style="padding:20px;">✅ Sin alertas</div></td></tr>';
+}
+
+// ── Products ──────────────────────────────────────────────────────────────────
+function renderProducts(){
+  const term=(document.getElementById('prodSearch').value||'').toLowerCase();
+  const list=Object.values(products).filter(p=>
+    p.name.toLowerCase().includes(term)||p.code.toLowerCase().includes(term)||
+    (p.brand||'').toLowerCase().includes(term)||(p.location||'').toLowerCase().includes(term)
+  ).sort((a,b)=>a.name.localeCompare(b.name));
+  document.getElementById('prodCount').textContent=`Productos (${list.length})`;
+  document.getElementById('prodBody').innerHTML = list.length ? list.map(p=>`<tr>
+    <td class="code">${esc(p.code)}</td>
+    <td><div style="font-weight:500">${esc(p.name)}</div></td>
+    <td>${p.brand?`<span class="brand-badge">${esc(p.brand)}</span>`:''}</td>
+    <td class="text-sm">${esc(p.location||'—')}</td>
+    <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
+    <td style="white-space:nowrap;">
+      <button class="btn btn-sm btn-outline" onclick="openMoveModal('${esc(p.code)}')">Mover</button>
+      <button class="btn btn-sm btn-outline" onclick="showQRModal('${esc(p.code)}')">QR</button>
+      <button class="btn-icon btn-sm" onclick="editProduct('${esc(p.code)}')">✏️</button>
+      <button class="btn-icon btn-sm" onclick="delProduct('${esc(p.code)}')">🗑️</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state"><span class="es-icon">📦</span>No hay productos</div></td></tr>';
+}
+
+async function saveProduct(){
+  const code = document.getElementById('prodCode').value.trim() || genCode();
+  const name = document.getElementById('prodName').value.trim();
+  const brand = document.getElementById('prodBrand').value.trim();
+  const stock = parseInt(document.getElementById('prodStock').value)||0;
+  const location = document.getElementById('prodLocation').value.trim();
+  const editCode = document.getElementById('editProdCode').value;
+
+  if(!name){ toast('Falta el nombre','error'); return; }
+
+  if(editCode){
+    await api.put(`/api/products/${encodeURIComponent(editCode)}`, {name,brand,location});
+    toast('Producto actualizado','success');
+  } else {
+    const {ok,data} = await api.post('/api/products', {code,name,brand,stock,location});
+    if(!ok){ toast(data.error||'Error','error'); return; }
+    // Mostrar QR
+    document.getElementById('qrPreview').innerHTML='';
+    new QRCode(document.getElementById('qrPreview'),{text:code,width:150,height:150,colorDark:'#1A4F9C',colorLight:'#ffffff'});
+    document.getElementById('qrLabel').textContent=code;
+    document.getElementById('qrZone').style.display='block';
+    toast('Producto creado','success');
+  }
+  await loadProducts();
+  await loadDashboard();
+  if(!document.getElementById('editProdCode').value) return; // keep modal open to show QR
+  closeModal('modalAddProduct');
+}
+
+function editProduct(code){
+  const p=products[code]; if(!p) return;
+  document.getElementById('modalProdTitle').textContent='Editar producto';
+  document.getElementById('editProdCode').value=code;
+  document.getElementById('prodName').value=p.name;
+  document.getElementById('prodBrand').value=p.brand||'';
+  document.getElementById('prodCode').value=p.code;
+  document.getElementById('prodCode').disabled=true;
+  document.getElementById('prodStock').value=p.stock;
+  document.getElementById('prodStock').disabled=true;
+  document.getElementById('prodLocation').value=p.location||'';
+  document.getElementById('qrZone').style.display='none';
+  openModal('modalAddProduct');
+}
+
+async function delProduct(code){
+  if(!confirm('¿Borrar este producto?')) return;
+  await api.del(`/api/products/${encodeURIComponent(code)}`);
+  await loadProducts(); await loadDashboard();
+  toast('Producto eliminado');
+}
+
+function openAddProduct(){
+  document.getElementById('modalProdTitle').textContent='Agregar producto';
+  document.getElementById('editProdCode').value='';
+  document.getElementById('prodName').value='';
+  document.getElementById('prodBrand').value='';
+  document.getElementById('prodCode').value='';
+  document.getElementById('prodCode').disabled=false;
+  document.getElementById('prodStock').value='0';
+  document.getElementById('prodStock').disabled=false;
+  document.getElementById('prodLocation').value='';
+  document.getElementById('qrZone').style.display='none';
+  openModal('modalAddProduct');
+}
+
+function genCode(){ let n=1,ks=Object.keys(products); while(ks.includes('PRD-'+String(n).padStart(4,'0')))n++; return 'PRD-'+String(n).padStart(4,'0'); }
+
+// QR modal simple
+function showQRModal(code){
+  const p=products[code]; if(!p) return;
+  const d=document.createElement('div'); d.className='modal-bg open'; d.id='tmpQR';
+  d.innerHTML=`<div class="modal" style="max-width:340px;">
+    <div class="modal-header"><span class="modal-title">${esc(p.name)}</span><button class="modal-close" onclick="document.getElementById('tmpQR').remove()">×</button></div>
+    <div class="modal-body" style="text-align:center;">
+      ${p.brand?`<span class="brand-badge">${esc(p.brand)}</span>`:''}
+      <div class="code" style="margin:4px 0 14px;">${esc(p.code)}</div>
+      <div style="display:flex;justify-content:center;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border);" id="tmpQRPreview"></div>
+      <button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%;" onclick="dlQR('${esc(code)}')">⬇ Descargar PNG</button>
+    </div>
+  </div>`;
+  document.body.appendChild(d);
+  new QRCode(document.getElementById('tmpQRPreview'),{text:p.code,width:180,height:180,colorDark:'#1A4F9C',colorLight:'#ffffff'});
+}
+function dlQR(code){
+  const c=document.querySelector('#tmpQRPreview canvas'); if(!c) return;
+  const a=document.createElement('a'); a.download=code+'.png'; a.href=c.toDataURL(); a.click();
+}
+function downloadQR(){
+  const c=document.querySelector('#qrPreview canvas'); if(!c) return;
+  const a=document.createElement('a'); a.download=(document.getElementById('qrLabel').textContent||'qr')+'.png'; a.href=c.toDataURL(); a.click();
+}
+
+// ── Move stock modal ──────────────────────────────────────────────────────────
+function openMoveModal(code){
+  const p=products[code]; if(!p) return;
+  document.getElementById('moveCode').value=code;
+  document.getElementById('moveProdInfo').innerHTML=`<div style="font-weight:600;font-size:15px;">${esc(p.name)}</div>${p.brand?`<span class="brand-badge">${esc(p.brand)}</span>`:''}<div class="code" style="margin-top:4px;">${esc(p.code)}</div><div style="margin-top:8px;font-size:13px;color:var(--ink3);">Stock actual: <strong style="color:var(--ink);font-size:16px;">${p.stock}</strong></div>${p.location?`<div class="text-sm" style="margin-top:2px;">📍 ${esc(p.location)}</div>`:''}`;
+  document.getElementById('moveQty').value='1';
+  document.getElementById('moveLocation').value=p.location||'';
+  document.getElementById('moveNotes').value='';
+  setMoveType('add');
+  openModal('modalMoveStock');
+}
+function setMoveType(t){
+  moveType=t;
+  ['add','sub','set'].forEach(x=>{
+    const b=document.getElementById('moveType'+x.charAt(0).toUpperCase()+x.slice(1));
+    b.className='type-btn';
+    if(x===t) b.className+=(x==='add'?' active-entrada':x==='sub'?' active-salida':' active-entrada');
+  });
+}
+async function confirmMove(){
+  const code=document.getElementById('moveCode').value;
+  const qty=parseInt(document.getElementById('moveQty').value)||0;
+  const projId=document.getElementById('moveProject').value||null;
+  const location=document.getElementById('moveLocation').value.trim();
+  const notes=document.getElementById('moveNotes').value.trim();
+  const typeMap={add:'entrada',sub:'salida',set:'ajuste'};
+  const {ok,data}=await api.post('/api/movements',{product_code:code,type:typeMap[moveType],qty,project_id:projId,location,notes});
+  if(!ok){toast(data.error||'Error','error');return;}
+  await loadProducts(); await loadDashboard(); loadMovements();
+  toast(`${products[code]?.name||code}: ahora ${data.stock_after} unidades`,'success');
+  closeModal('modalMoveStock');
+}
+
+// ── Scanner ───────────────────────────────────────────────────────────────────
+const video=document.getElementById('video');
+document.getElementById('btnStart').addEventListener('click',startScan);
+async function startScan(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject=stream; video.style.display='block';
+    document.getElementById('scanFrame').style.display='block';
+    document.getElementById('scanPH').style.display='none';
+    await video.play();
+    document.getElementById('btnStart').style.display='none';
+    document.getElementById('btnStop').style.display='inline-flex';
+    scanning=true; scanLoop();
+  }catch(e){toast('No se pudo acceder a la cámara — asegurate de usar HTTPS','error');}
+}
+function stopScan(){
+  scanning=false; if(rafId)cancelAnimationFrame(rafId);
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  video.style.display='none';
+  document.getElementById('scanFrame').style.display='none';
+  document.getElementById('scanPH').style.display='block';
+  document.getElementById('btnStart').style.display='inline-flex';
+  document.getElementById('btnStop').style.display='none';
+}
+function scanLoop(){
+  if(!scanning) return;
+  if(video.readyState===video.HAVE_ENOUGH_DATA){
+    cvs.width=video.videoWidth; cvs.height=video.videoHeight;
+    cx.drawImage(video,0,0);
+    const img=cx.getImageData(0,0,cvs.width,cvs.height);
+    const found=jsQR(img.data,img.width,img.height);
+    if(found&&found.data&&Date.now()-lastScan>1500){lastScan=Date.now();handleScan(found.data.trim());}
+  }
+  rafId=requestAnimationFrame(scanLoop);
+}
+function manualLookup(){ const c=document.getElementById('manualCode').value.trim(); if(c)handleScan(c); }
+
+function handleScan(code){
+  const p=products[code];
+  if(!p){ toast('Código no encontrado: '+code,'error'); return; }
+  scanProduct=p; scanMoveType='entrada';
+  showScanResult(p);
+}
+
+function showScanResult(p){
+  const projOpts=projects.map(pr=>`<option value="${pr.id}">${esc(pr.name)}</option>`).join('');
+  document.getElementById('scanResult').style.display='block';
+  document.getElementById('scanResult').innerHTML=`
+    <div class="scan-result-card">
+      <div class="sr-name">${esc(p.name)}</div>
+      <div class="sr-meta">
+        ${p.brand?`<span class="brand-badge">${esc(p.brand)}</span>`:''}
+        <span class="badge badge-gray code">${esc(p.code)}</span>
+        <span class="badge badge-blue">Stock: ${p.stock}</span>
+        ${p.location?`<span class="badge badge-gray">📍 ${esc(p.location)}</span>`:''}
+      </div>
+      <div class="type-toggle" style="margin-bottom:14px;">
+        <button class="type-btn active-entrada" id="stEntrada" onclick="setScanType('entrada')">📥 Entrada</button>
+        <button class="type-btn" id="stSalida" onclick="setScanType('salida')">📤 Salida</button>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px;">
+        <div class="fg"><label>Cantidad</label><input id="scanQty" type="number" value="1" min="1"></div>
+        <div class="fg"><label>Proyecto</label><select id="scanProject"><option value="">Stock general</option>${projOpts}</select></div>
+        <div class="fg span2"><label>Ubicación / Estantería</label><input id="scanLocation" placeholder="Ej: Estante A3" value="${esc(p.location||'')}"></div>
+        <div class="fg span2"><label>Notas</label><input id="scanNotes" placeholder="Observaciones opcionales..."></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" onclick="document.getElementById('scanResult').style.display='none'">Cancelar</button>
+        <button class="btn btn-primary fw" onclick="confirmScan()">✔ Confirmar movimiento</button>
+      </div>
+    </div>`;
+}
+
+function setScanType(t){
+  scanMoveType=t;
+  document.getElementById('stEntrada').className='type-btn'+(t==='entrada'?' active-entrada':'');
+  document.getElementById('stSalida').className='type-btn'+(t==='salida'?' active-salida':'');
+}
+
+async function confirmScan(){
+  const qty=parseInt(document.getElementById('scanQty').value)||1;
+  const projId=document.getElementById('scanProject').value||null;
+  const location=document.getElementById('scanLocation').value.trim();
+  const notes=document.getElementById('scanNotes').value.trim();
+  const {ok,data}=await api.post('/api/movements',{
+    product_code:scanProduct.code, type:scanMoveType, qty, project_id:projId, location, notes
+  });
+  if(!ok){toast(data.error||'Error','error');return;}
+  await loadProducts(); await loadDashboard(); loadMovements();
+  toast(`${scanProduct.name}: ${scanMoveType==='entrada'?'+':'−'}${qty} unidades → ${data.stock_after} en stock`,'success');
+  document.getElementById('scanResult').style.display='none';
+  document.getElementById('manualCode').value='';
+}
+
+// ── Movements / Llegadas ──────────────────────────────────────────────────────
+function setMovFilter(f,btn){
+  movFilter=f;
+  document.querySelectorAll('[data-filter]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  loadMovements();
+}
+function renderMovements(){
+  document.getElementById('movCount').textContent=`Movimientos (${movements.length})`;
+  document.getElementById('movBody').innerHTML = movements.length ? movements.map(m=>`<tr>
+    <td class="text-sm" style="white-space:nowrap;">${fmtDateFull(m.created_at)}</td>
+    <td><div style="font-weight:500;font-size:13px;">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
+    <td>${m.brand?`<span class="brand-badge">${esc(m.brand)}</span>`:''}</td>
+    <td>${typeBadge(m.type)}</td>
+    <td><span class="stock-num">${m.type==='salida'?'-':''}${m.qty}</span></td>
+    <td class="text-sm">${m.project_name||'—'}</td>
+    <td class="text-sm">${esc(m.location||'—')}</td>
+    <td class="text-sm">${esc(m.notes||'—')}</td>
+  </tr>`).join('') : '<tr><td colspan="8"><div class="empty-state"><span class="es-icon">📋</span>Sin movimientos en este período</div></td></tr>';
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+function setProjFilter(f,btn){
+  projFilter=f;
+  document.querySelectorAll('#section-proyectos .filter-btn:not(.btn)').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProjects();
+}
+function renderProjects(){
+  document.getElementById('projDetail').style.display='none';
+  const list = projFilter==='all' ? projects : projects.filter(p=>p.status===projFilter);
+  document.getElementById('projGrid').innerHTML = list.length ? list.map(p=>`
+    <div class="proj-card" onclick="showProjDetail(${p.id})">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="proj-name">${esc(p.name)}</div>
+        ${statusBadge(p.status)}
+      </div>
+      <div class="proj-desc">${esc(p.description||'Sin descripción')}</div>
+      <div class="proj-stats">
+        <div class="proj-stat"><strong>${p.movement_count||0}</strong> movimientos</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;" onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-outline" onclick="editProject(${p.id})">Editar</button>
+        <button class="btn btn-sm btn-outline" style="color:var(--red);" onclick="delProject(${p.id})">Eliminar</button>
+      </div>
+    </div>`).join('') : '<div class="empty-state" style="grid-column:1/-1;"><span class="es-icon">🏗️</span>No hay proyectos</div>';
+}
+
+async function showProjDetail(id){
+  const p=projects.find(x=>x.id===id); if(!p) return;
+  const movs=await api.get(`/api/movements?filter=all&project_id=${id}`);
+  const det=document.getElementById('projDetail');
+  det.style.display='block';
+  det.innerHTML=`<div class="card" style="margin-bottom:20px;">
+    <div class="card-header">
+      <div><span class="card-title">${esc(p.name)}</span> ${statusBadge(p.status)}</div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('projDetail').style.display='none'">← Volver</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Ubicación</th><th>Notas</th></tr></thead>
+      <tbody>${movs.length?movs.map(m=>`<tr>
+        <td class="text-sm">${fmtDateFull(m.created_at)}</td>
+        <td><div style="font-weight:500">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
+        <td>${typeBadge(m.type)}</td>
+        <td><span class="stock-num">${m.qty}</span></td>
+        <td class="text-sm">${esc(m.location||'—')}</td>
+        <td class="text-sm">${esc(m.notes||'—')}</td>
+      </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state" style="padding:20px;">Sin movimientos</div></td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+  document.getElementById('projGrid').style.display='none';
+  document.querySelector('#section-proyectos .filter-row').style.display='none';
+  det.querySelector('button').addEventListener('click',()=>{
+    document.getElementById('projGrid').style.display='';
+    document.querySelector('#section-proyectos .filter-row').style.display='';
+  });
+}
+
+async function saveProject(){
+  const id=document.getElementById('editProjId').value;
+  const d={name:document.getElementById('projName').value.trim(),description:document.getElementById('projDesc').value.trim(),status:document.getElementById('projStatus').value};
+  if(!d.name){toast('Falta el nombre','error');return;}
+  if(id) await api.put(`/api/projects/${id}`,d);
+  else await api.post('/api/projects',d);
+  await loadProjects(); updateProjectDropdowns();
+  closeModal('modalAddProject');
+  toast(id?'Proyecto actualizado':'Proyecto creado','success');
+}
+function editProject(id){
+  const p=projects.find(x=>x.id===id); if(!p) return;
+  document.getElementById('modalProjTitle').textContent='Editar proyecto';
+  document.getElementById('editProjId').value=id;
+  document.getElementById('projName').value=p.name;
+  document.getElementById('projDesc').value=p.description||'';
+  document.getElementById('projStatus').value=p.status;
+  openModal('modalAddProject');
+}
+async function delProject(id){
+  if(!confirm('¿Eliminar este proyecto?')) return;
+  await api.del(`/api/projects/${id}`);
+  await loadProjects(); toast('Proyecto eliminado');
+}
+
+// ── Purchases ─────────────────────────────────────────────────────────────────
+function setComprasView(v,btn){
+  comprasView=v;
+  document.querySelectorAll('#section-compras .filter-btn:not(.btn)').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('comprasKanban').style.display=v==='kanban'?'':'none';
+  document.getElementById('comprasTabla').style.display=v==='tabla'?'':'none';
+  renderPurchases();
+}
+
+const purchaseStatuses=[
+  {key:'pendiente',  label:'Pendiente',   badge:'badge-yellow'},
+  {key:'ordenado',   label:'Ordenado',    badge:'badge-blue'},
+  {key:'en_transito',label:'En tránsito', badge:'badge-orange'},
+  {key:'recibido',   label:'Recibido',    badge:'badge-green'},
+];
+
+function renderPurchases(){
+  // Kanban
+  const kb=document.getElementById('comprasKanban');
+  kb.innerHTML=purchaseStatuses.map(st=>{
+    const items=purchases.filter(p=>p.status===st.key);
+    return `<div class="k-col">
+      <div class="k-col-title"><span class="badge ${st.badge}">●</span>${st.label} (${items.length})</div>
+      ${items.map(p=>`<div class="k-card" onclick="editCompra(${p.id})">
+        <div class="k-card-name">${esc(p.product_name)}</div>
+        <div class="k-card-meta">${esc(p.supplier||'—')} · ${p.qty} u · ${p.currency} ${p.unit_price?.toFixed(2)||'0.00'}</div>
+        ${p.project_name?`<div class="k-card-meta" style="margin-top:3px;">🏗️ ${esc(p.project_name)}</div>`:''}
+        ${p.expected_date?`<div class="k-card-meta">📅 ${p.expected_date}</div>`:''}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+  // Tabla
+  const tb=document.getElementById('comprasBody');
+  tb.innerHTML=purchases.length?purchases.map(p=>`<tr>
+    <td><div style="font-weight:500">${esc(p.product_name)}</div>${p.product_code?`<div class="code">${esc(p.product_code)}</div>`:''}</td>
+    <td class="text-sm">${esc(p.supplier||'—')}</td>
+    <td>${p.qty}</td>
+    <td class="text-sm">${p.currency} ${p.unit_price?.toFixed(2)||'0.00'}</td>
+    <td>${purchaseBadge(p.status)}</td>
+    <td class="text-sm">${esc(p.project_name||'—')}</td>
+    <td class="text-sm">${p.order_date||'—'}</td>
+    <td class="text-sm">${p.expected_date||'—'}</td>
+    <td><button class="btn-icon btn-sm" onclick="editCompra(${p.id})">✏️</button> <button class="btn-icon btn-sm" onclick="delCompra(${p.id})">🗑️</button></td>
+  </tr>`).join(''):'<tr><td colspan="9"><div class="empty-state"><span class="es-icon">🛒</span>Sin órdenes de compra</div></td></tr>';
+}
+
+async function saveCompra(){
+  const id=document.getElementById('editCompraId').value;
+  const d={
+    product_code:document.getElementById('compraCode').value.trim(),
+    product_name:document.getElementById('compraProducto').value.trim(),
+    supplier:document.getElementById('compraSupplier').value.trim(),
+    qty:parseInt(document.getElementById('compraQty').value)||1,
+    unit_price:parseFloat(document.getElementById('compraPrecio').value)||0,
+    currency:document.getElementById('compraCurrency').value,
+    status:document.getElementById('compraStatus').value,
+    project_id:document.getElementById('compraProject').value||null,
+    order_date:document.getElementById('compraOrderDate').value||null,
+    expected_date:document.getElementById('compraExpDate').value||null,
+    received_date:document.getElementById('compraRecDate').value||null,
+    notes:document.getElementById('compraNotas').value,
+  };
+  if(!d.product_name){toast('Falta el nombre del producto','error');return;}
+  if(id) await api.put(`/api/purchases/${id}`,d);
+  else await api.post('/api/purchases',d);
+  await loadPurchases(); await loadDashboard();
+  closeModal('modalAddCompra');
+  toast(id?'Orden actualizada':'Orden creada','success');
+}
+
+function editCompra(id){
+  const p=purchases.find(x=>x.id===id); if(!p) return;
+  document.getElementById('modalCompraTitle').textContent='Editar orden de compra';
+  document.getElementById('editCompraId').value=id;
+  document.getElementById('compraProducto').value=p.product_name||'';
+  document.getElementById('compraCode').value=p.product_code||'';
+  document.getElementById('compraSupplier').value=p.supplier||'';
+  document.getElementById('compraQty').value=p.qty||1;
+  document.getElementById('compraPrecio').value=p.unit_price||0;
+  document.getElementById('compraCurrency').value=p.currency||'USD';
+  document.getElementById('compraStatus').value=p.status||'pendiente';
+  document.getElementById('compraProject').value=p.project_id||'';
+  document.getElementById('compraOrderDate').value=p.order_date||'';
+  document.getElementById('compraExpDate').value=p.expected_date||'';
+  document.getElementById('compraRecDate').value=p.received_date||'';
+  document.getElementById('compraNotas').value=p.notes||'';
+  openModal('modalAddCompra');
+}
+
+async function delCompra(id){
+  if(!confirm('¿Eliminar esta orden?')) return;
+  await api.del(`/api/purchases/${id}`);
+  await loadPurchases(); await loadDashboard();
+  toast('Orden eliminada');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function updateProjectDropdowns(){
+  const opts='<option value="">Sin proyecto</option>'+projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  ['moveProject','compraProject'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts;});
+}
+
+function typeBadge(t){
+  if(t==='entrada') return '<span class="badge badge-green">📥 Entrada</span>';
+  if(t==='salida')  return '<span class="badge badge-red">📤 Salida</span>';
+  return '<span class="badge badge-blue">📌 Ajuste</span>';
+}
+function purchaseBadge(s){
+  const map={pendiente:'badge-yellow',ordenado:'badge-blue',en_transito:'badge-orange',recibido:'badge-green'};
+  const label={pendiente:'Pendiente',ordenado:'Ordenado',en_transito:'En tránsito',recibido:'Recibido'};
+  return `<span class="badge ${map[s]||'badge-gray'}">${label[s]||s}</span>`;
+}
+function statusBadge(s){
+  const map={activo:'badge-green',pausado:'badge-yellow',completado:'badge-gray'};
+  return `<span class="badge ${map[s]||'badge-gray'}">${s}</span>`;
+}
+function fmtDate(dt){ if(!dt) return '—'; const d=new Date(dt.replace(' ','T')); return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
+function fmtDateFull(dt){ if(!dt) return '—'; const d=new Date(dt.replace(' ','T')); return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }
+function esc(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function toast(msg, type=''){
+  const t=document.getElementById('toast'); t.textContent=msg;
+  t.className='toast'+(type?' '+type:'');
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+const sectionTitles={dashboard:'Dashboard',productos:'Productos',escanear:'Escanear QR',llegadas:'Llegadas de material',proyectos:'Proyectos',compras:'Seguimiento de compras'};
+
+function navigate(sec){
+  currentSection=sec;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.sec===sec));
+  document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id==='section-'+sec));
+  document.getElementById('topbarTitle').textContent=sectionTitles[sec]||sec;
+  if(sec!=='escanear') stopScan();
+  if(sec==='llegadas') loadMovements();
+  if(sec==='proyectos'){ document.getElementById('projGrid').style.display=''; document.querySelector('#section-proyectos .filter-row').style.display=''; }
+  closeSidebar();
+}
+
+document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>navigate(n.dataset.sec)));
+document.getElementById('sbToggle').addEventListener('click',()=>{
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sbOverlay').classList.toggle('show');
+});
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sbOverlay').classList.remove('show'); }
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(m=>{
+  m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('open'); });
+});
+
+// Override open button in productos
+document.querySelector('[onclick="openModal(\'modalAddProduct\')"]').setAttribute('onclick','openAddProduct()');
+
+// ── Global search ─────────────────────────────────────────────────────────────
+function globalSearch(term){
+  if(!term){ return; }
+  navigate('productos');
+  document.getElementById('prodSearch').value=term;
+  renderProducts();
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+window.openModal=openModal; window.closeModal=closeModal;
+window.openAddProduct=openAddProduct; window.saveProduct=saveProduct;
+window.editProduct=editProduct; window.delProduct=delProduct;
+window.showQRModal=showQRModal; window.dlQR=dlQR; window.downloadQR=downloadQR;
+window.openMoveModal=openMoveModal; window.setMoveType=setMoveType; window.confirmMove=confirmMove;
+window.setScanType=setScanType; window.confirmScan=confirmScan; window.manualLookup=manualLookup;
+window.setMovFilter=setMovFilter;
+window.setProjFilter=setProjFilter; window.saveProject=saveProject; window.editProject=editProject; window.delProject=delProject;
+window.setComprasView=setComprasView; window.saveCompra=saveCompra; window.editCompra=editCompra; window.delCompra=delCompra;
+
+init();
+</script>
+</body>
+</html>
