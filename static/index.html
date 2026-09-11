@@ -231,9 +231,16 @@ select.search-input{cursor:pointer;}
   <div class="stat-grid" id="dashStats"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
     <div class="card">
-      <div class="card-header"><span class="card-title">⚡ Últimos movimientos</span></div>
+      <div class="card-header">
+        <span class="card-title">⚡ Últimos movimientos</span>
+        <div style="display:flex;gap:5px;">
+          <button class="filter-btn active" id="dmfAll"    onclick="setDashMovFilter('all',this)">Todos</button>
+          <button class="filter-btn"        id="dmfEnt"    onclick="setDashMovFilter('entrada',this)">📥 Entradas</button>
+          <button class="filter-btn"        id="dmfSal"    onclick="setDashMovFilter('salida',this)">📤 Salidas</button>
+        </div>
+      </div>
       <div class="table-wrap"><table id="dashMovTable">
-        <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Producto</th><th>Marca</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th></tr></thead>
         <tbody id="dashMovBody"></tbody>
       </table></div>
     </div>
@@ -520,9 +527,32 @@ async function loadPurchases(){
   purchases = await api.get('/api/purchases');
   renderPurchases();
 }
+let dashMovFilter = 'all';
+let dashMovementsCache = [];
+
+function setDashMovFilter(f, btn){
+  dashMovFilter = f;
+  document.querySelectorAll('#section-dashboard .filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDashMovements();
+}
+
+function renderDashMovements(){
+  const list = dashMovFilter==='all' ? dashMovementsCache
+    : dashMovementsCache.filter(m=>m.type===dashMovFilter);
+  const mb = document.getElementById('dashMovBody');
+  mb.innerHTML = list.length ? list.map(m=>`<tr>
+    <td class="text-sm" style="white-space:nowrap">${fmtDateFull(m.created_at)}</td>
+    <td><div style="font-weight:500;font-size:13px">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
+    <td>${m.brand?`<span class="brand-badge">${esc(m.brand)}</span>`:''}</td>
+    <td>${typeBadge(m.type)}</td>
+    <td><span class="stock-num">${m.qty}</span></td>
+    <td class="text-sm">${esc(m.project_name||'—')}</td>
+  </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state" style="padding:20px">Sin movimientos</div></td></tr>`;
+}
+
 async function loadDashboard(){
   const d = await api.get('/api/dashboard');
-  // Stats
   const icons=['📦','📊','🚚','🛒'];
   const labels=['Productos','Unidades en stock','Llegadas esta semana','Compras pendientes'];
   const vals=[d.total_products, d.total_stock, d.arrivals_week, d.pending_purchases];
@@ -532,16 +562,8 @@ async function loadDashboard(){
       <div class="sc-val">${v}</div>
       <div class="sc-lbl">${labels[i]}</div>
     </div>`).join('');
-  // Recent movements
-  const mb=document.getElementById('dashMovBody');
-  mb.innerHTML = d.recent_movements.length ? d.recent_movements.map(m=>`<tr>
-    <td class="text-sm">${fmtDate(m.created_at)}</td>
-    <td><div style="font-weight:500">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
-    <td>${typeBadge(m.type)}</td>
-    <td><span class="stock-num">${m.qty}</span></td>
-    <td class="text-sm">${m.project_name||'—'}</td>
-  </tr>`).join('') : '<tr><td colspan="5" class="empty-state">Sin movimientos</td></tr>';
-  // Low stock
+  dashMovementsCache = d.recent_movements;
+  renderDashMovements();
   document.getElementById('dashLowBody').innerHTML = d.low_stock.length ? d.low_stock.map(p=>`<tr>
     <td><div style="font-weight:500;font-size:13px;">${esc(p.name)}</div><div class="code">${esc(p.code)}</div></td>
     <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
@@ -683,17 +705,33 @@ function setMoveType(t){
   });
 }
 async function confirmMove(){
-  const code=document.getElementById('moveCode').value;
-  const qty=parseInt(document.getElementById('moveQty').value)||0;
-  const projId=document.getElementById('moveProject').value||null;
-  const location=document.getElementById('moveLocation').value.trim();
-  const notes=document.getElementById('moveNotes').value.trim();
-  const typeMap={add:'entrada',sub:'salida',set:'ajuste'};
-  const {ok,data}=await api.post('/api/movements',{product_code:code,type:typeMap[moveType],qty,project_id:projId,location,notes});
-  if(!ok){toast(data.error||'Error','error');return;}
-  await loadProducts(); await loadDashboard(); loadMovements();
-  toast(`${products[code]?.name||code}: ahora ${data.stock_after} unidades`,'success');
+  const code     = document.getElementById('moveCode').value;
+  const qty      = parseInt(document.getElementById('moveQty').value)||0;
+  const projId   = document.getElementById('moveProject').value||null;
+  const location = document.getElementById('moveLocation').value.trim();
+  const notes    = document.getElementById('moveNotes').value.trim();
+  const typeMap  = {add:'entrada', sub:'salida', set:'ajuste'};
+
+  const {ok,data} = await api.post('/api/movements',{
+    product_code:code, type:typeMap[moveType], qty, project_id:projId, location, notes
+  });
+  if(!ok){ toast(data.error||'Error','error'); return; }
+
+  const name = products[code]?.name || code;
+  // 1. Actualizar estado local de inmediato (sin esperar reload)
+  if(products[code]){
+    products[code].stock = data.stock_after;
+    if(location) products[code].location = location;
+  }
+  // 2. Cerrar modal y refrescar UI al instante
   closeModal('modalMoveStock');
+  renderProducts();
+  document.getElementById('sCount').textContent = Object.keys(products).length;
+  document.getElementById('sTotal').textContent = Object.values(products).reduce((a,p)=>a+p.stock,0);
+  toast(`${name}: ahora ${data.stock_after} unidades`, 'success');
+  // 3. Sincronizar con servidor en segundo plano
+  loadDashboard();
+  loadMovements();
 }
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
@@ -776,18 +814,29 @@ function setScanType(t){
 }
 
 async function confirmScan(){
-  const qty=parseInt(document.getElementById('scanQty').value)||1;
-  const projId=document.getElementById('scanProject').value||null;
-  const location=document.getElementById('scanLocation').value.trim();
-  const notes=document.getElementById('scanNotes').value.trim();
-  const {ok,data}=await api.post('/api/movements',{
+  const qty      = parseInt(document.getElementById('scanQty').value)||1;
+  const projId   = document.getElementById('scanProject').value||null;
+  const location = document.getElementById('scanLocation').value.trim();
+  const notes    = document.getElementById('scanNotes').value.trim();
+
+  const {ok,data} = await api.post('/api/movements',{
     product_code:scanProduct.code, type:scanMoveType, qty, project_id:projId, location, notes
   });
-  if(!ok){toast(data.error||'Error','error');return;}
-  await loadProducts(); await loadDashboard(); loadMovements();
-  toast(`${scanProduct.name}: ${scanMoveType==='entrada'?'+':'−'}${qty} unidades → ${data.stock_after} en stock`,'success');
+  if(!ok){ toast(data.error||'Error','error'); return; }
+
+  // 1. Actualizar estado local de inmediato
+  const code = scanProduct.code;
+  if(products[code]){
+    products[code].stock = data.stock_after;
+    if(location) products[code].location = location;
+  }
+  // 2. Cerrar panel de escaneo y limpiar
   document.getElementById('scanResult').style.display='none';
   document.getElementById('manualCode').value='';
+  toast(`${scanProduct.name}: ${scanMoveType==='entrada'?'+':'−'}${qty} → stock: ${data.stock_after}`, 'success');
+  // 3. Sincronizar en segundo plano
+  loadDashboard();
+  loadMovements();
 }
 
 // ── Movements / Llegadas ──────────────────────────────────────────────────────
@@ -838,35 +887,72 @@ function renderProjects(){
     </div>`).join('') : '<div class="empty-state" style="grid-column:1/-1;"><span class="es-icon">🏗️</span>No hay proyectos</div>';
 }
 
+function backToProjects(){
+  document.getElementById('projDetail').style.display='none';
+  document.getElementById('projGrid').style.display='';
+  document.querySelector('#section-proyectos .filter-row').style.display='';
+}
+
 async function showProjDetail(id){
-  const p=projects.find(x=>x.id===id); if(!p) return;
-  const movs=await api.get(`/api/movements?filter=all&project_id=${id}`);
-  const det=document.getElementById('projDetail');
-  det.style.display='block';
-  det.innerHTML=`<div class="card" style="margin-bottom:20px;">
-    <div class="card-header">
-      <div><span class="card-title">${esc(p.name)}</span> ${statusBadge(p.status)}</div>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('projDetail').style.display='none'">← Volver</button>
+  const p = projects.find(x=>x.id===id); if(!p) return;
+  const movs = await api.get(`/api/movements?filter=all&project_id=${id}`);
+
+  // Resumen por producto: agrupar movimientos y calcular neto
+  const resumen = {};
+  movs.forEach(m=>{
+    const k = m.product_code;
+    if(!resumen[k]) resumen[k]={code:k, name:m.product_name, brand:m.brand||'', entradas:0, salidas:0};
+    if(m.type==='entrada') resumen[k].entradas += m.qty;
+    else if(m.type==='salida') resumen[k].salidas += m.qty;
+    else resumen[k].entradas += m.qty; // ajuste cuenta como entrada
+  });
+  const resumenList = Object.values(resumen).sort((a,b)=>a.name.localeCompare(b.name));
+
+  const det = document.getElementById('projDetail');
+  det.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <button class="btn btn-outline btn-sm" onclick="backToProjects()">← Volver</button>
+      <span style="font-weight:700;font-size:17px;">${esc(p.name)}</span>
+      ${statusBadge(p.status)}
     </div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Ubicación</th><th>Notas</th></tr></thead>
-      <tbody>${movs.length?movs.map(m=>`<tr>
-        <td class="text-sm">${fmtDateFull(m.created_at)}</td>
-        <td><div style="font-weight:500">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
-        <td>${typeBadge(m.type)}</td>
-        <td><span class="stock-num">${m.qty}</span></td>
-        <td class="text-sm">${esc(m.location||'—')}</td>
-        <td class="text-sm">${esc(m.notes||'—')}</td>
-      </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state" style="padding:20px;">Sin movimientos</div></td></tr>'}</tbody>
-    </table></div>
-  </div>`;
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><span class="card-title">📦 Productos asignados a este proyecto</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Producto</th><th>Marca</th><th>📥 Entradas</th><th>📤 Salidas</th><th>Neto</th></tr></thead>
+        <tbody>${resumenList.length ? resumenList.map(r=>{
+          const neto = r.entradas - r.salidas;
+          return `<tr>
+            <td><div style="font-weight:500">${esc(r.name)}</div><div class="code">${esc(r.code)}</div></td>
+            <td>${r.brand?`<span class="brand-badge">${esc(r.brand)}</span>`:''}</td>
+            <td><span class="stock-num" style="color:var(--green)">${r.entradas}</span></td>
+            <td><span class="stock-num" style="color:var(--red)">${r.salidas}</span></td>
+            <td><span class="stock-num ${neto<0?'low':''}">${neto}</span></td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="5"><div class="empty-state" style="padding:20px">Sin productos</div></td></tr>'}</tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Historial de movimientos</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant.</th><th>Ubicación</th><th>Notas</th></tr></thead>
+        <tbody>${movs.length ? movs.map(m=>`<tr>
+          <td class="text-sm" style="white-space:nowrap">${fmtDateFull(m.created_at)}</td>
+          <td><div style="font-weight:500">${esc(m.product_name)}</div><div class="code">${esc(m.product_code)}</div></td>
+          <td>${typeBadge(m.type)}</td>
+          <td><span class="stock-num">${m.qty}</span></td>
+          <td class="text-sm">${esc(m.location||'—')}</td>
+          <td class="text-sm">${esc(m.notes||'—')}</td>
+        </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state" style="padding:20px">Sin movimientos</div></td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+
+  det.style.display='block';
   document.getElementById('projGrid').style.display='none';
   document.querySelector('#section-proyectos .filter-row').style.display='none';
-  det.querySelector('button').addEventListener('click',()=>{
-    document.getElementById('projGrid').style.display='';
-    document.querySelector('#section-proyectos .filter-row').style.display='';
-  });
 }
+window.backToProjects = backToProjects;
 
 async function saveProject(){
   const id=document.getElementById('editProjId').value;
