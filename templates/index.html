@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventario — Silicom</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/libs/qrcode.min.js"></script>
+<script src="/static/libs/jsQR.js"></script>
+<style>
+:root {
+  --sil-900:#0D2B4E; --sil-800:#1A4F9C; --sil-600:#1E6EC8;
+  --sil-400:#5BB8E4; --sil-100:#E8F4FB; --sil-50:#F0F7FC;
+}
+body { background:#F8FAFB; font-size:14px; }
+/* Sidebar */
+#sidebar {
+  width:220px; min-height:100vh; background:var(--sil-800);
+  position:fixed; top:0; left:0; z-index:100;
+  display:flex; flex-direction:column;
+}
+#sidebar .brand { padding:20px 16px 14px; border-bottom:1px solid rgba(255,255,255,.12); }
+#sidebar .brand-name { font-weight:800; font-size:15px; color:#fff; letter-spacing:.04em; text-transform:uppercase; }
+#sidebar .brand-sub  { font-size:10px; color:rgba(255,255,255,.5); margin-top:2px; }
+#sidebar .nav-section { padding:14px 16px 4px; font-size:10px; font-weight:600; color:rgba(255,255,255,.4); text-transform:uppercase; letter-spacing:.08em; }
+#sidebar .nav-link { display:flex; align-items:center; gap:9px; padding:9px 16px; color:rgba(255,255,255,.78); border-radius:7px; margin:1px 8px; font-size:13px; cursor:pointer; transition:background .15s; }
+#sidebar .nav-link:hover { background:rgba(255,255,255,.12); color:#fff; }
+#sidebar .nav-link.active { background:rgba(255,255,255,.18); color:#fff; font-weight:600; }
+#sidebar .nav-link i { width:18px; text-align:center; font-size:15px; }
+#sidebar-footer { padding:12px 16px; border-top:1px solid rgba(255,255,255,.1); font-size:11px; color:rgba(255,255,255,.35); margin-top:auto; }
+/* Main */
+#main { margin-left:220px; min-height:100vh; display:flex; flex-direction:column; }
+#topbar { background:#fff; border-bottom:1px solid #E5E7EB; padding:0 24px; height:56px; display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:50; }
+#topbar-title { font-weight:700; font-size:16px; flex:1; }
+.content { padding:24px; flex:1; }
+.section { display:none; }
+.section.active { display:block; }
+/* Stats */
+.stat-card { background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:18px; }
+.stat-val { font-size:30px; font-weight:800; color:var(--sil-600); }
+.stat-lbl { font-size:12px; color:#6B7280; margin-top:2px; }
+/* Tables */
+.table-card { background:#fff; border:1px solid #E5E7EB; border-radius:12px; overflow:hidden; }
+.table-card .table-header { padding:14px 18px; border-bottom:1px solid #E5E7EB; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.table-card .table-header .title { font-weight:600; font-size:14px; }
+.table th { font-size:11px; font-weight:600; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; border-bottom-width:1px !important; white-space:nowrap; }
+.table td { vertical-align:middle; font-size:13px; }
+.table tbody tr:hover { background:#FAFBFC; }
+/* Badges */
+.badge-green  { background:#ECFDF5; color:#059669; }
+.badge-red    { background:#FEF2F2; color:#DC2626; }
+.badge-blue   { background:var(--sil-100); color:var(--sil-600); }
+.badge-yellow { background:#FFFBEB; color:#D97706; }
+.badge-orange { background:#FFF7ED; color:#EA580C; }
+.badge-gray   { background:#F3F4F6; color:#374151; border:1px solid #E5E7EB; }
+.brand-pill { display:inline-block; padding:1px 7px; border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; background:var(--sil-100); color:var(--sil-600); }
+.code-text { font-family:'Courier New',monospace; font-size:11px; color:#6B7280; }
+.stock-num { font-weight:800; font-size:16px; }
+.stock-num.low { color:#DC2626; }
+/* Scan */
+.scan-box { background:#0D1F35; border-radius:12px; aspect-ratio:4/3; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center; }
+#scan-video { width:100%; height:100%; object-fit:cover; display:none; }
+#scan-frame { position:absolute; inset:18%; border:2.5px solid var(--sil-400); border-radius:10px; pointer-events:none; display:none; }
+.scan-ph { text-align:center; color:rgba(255,255,255,.4); font-size:13px; padding:20px; line-height:1.7; }
+/* Kanban */
+.kanban-col { background:#F3F4F6; border-radius:10px; padding:12px; }
+.kanban-col-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+.kanban-card { background:#fff; border:1px solid #E5E7EB; border-radius:8px; padding:10px; margin-bottom:8px; cursor:pointer; transition:box-shadow .15s; }
+.kanban-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.1); }
+/* Toast */
+.toast-container { position:fixed; bottom:20px; right:20px; z-index:1100; }
+/* Mobile */
+#sb-toggle { display:none; }
+@media(max-width:768px){
+  #sidebar { transform:translateX(-100%); transition:transform .25s; }
+  #sidebar.open { transform:none; }
+  #sb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:99; }
+  #sb-overlay.show { display:block; }
+  #sb-toggle { display:inline-flex; }
+  #main { margin-left:0; }
+  #topbar { padding-left:56px; }
+}
+/* Filter pills */
+.filter-group .btn { font-size:12px; padding:4px 12px; border-radius:20px; }
+</style>
+</head>
+<body>
+
+<!-- Mobile toggle -->
+<button id="sb-toggle" class="btn btn-sm" style="position:fixed;top:14px;left:14px;z-index:101;background:var(--sil-800);color:#fff;border:none;">
+  <i class="bi bi-list"></i>
+</button>
+<div id="sb-overlay" onclick="closeSidebar()"></div>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="brand">
+    <div class="brand-name">Silicom</div>
+    <div class="brand-sub">Control de Inventario QR</div>
+  </div>
+  <div class="nav-section">Principal</div>
+  <a class="nav-link" data-tab="dashboard" onclick="navigate('dashboard')"><i class="bi bi-speedometer2"></i>Dashboard</a>
+  <a class="nav-link" data-tab="products"  onclick="navigate('products')"><i class="bi bi-box-seam"></i>Productos</a>
+  <a class="nav-link" data-tab="scan"      onclick="navigate('scan')"><i class="bi bi-qr-code-scan"></i>Escanear</a>
+  <div class="nav-section">Seguimiento</div>
+  <a class="nav-link" data-tab="movements" onclick="navigate('movements')"><i class="bi bi-arrow-left-right"></i>Movimientos</a>
+  <a class="nav-link" data-tab="projects"  onclick="navigate('projects')"><i class="bi bi-kanban"></i>Proyectos</a>
+  <a class="nav-link" data-tab="purchases" onclick="navigate('purchases')"><i class="bi bi-cart3"></i>Compras</a>
+  <div id="sidebar-footer">v2.1 — Silicom</div>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <div id="topbar">
+    <span id="topbar-title">Dashboard</span>
+    <input class="form-control form-control-sm" style="max-width:220px" id="globalSearch"
+           placeholder="🔍 Buscar producto..." oninput="handleGlobalSearch(this.value)">
+  </div>
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="section active" id="section-dashboard">
+      <div class="row g-3 mb-4" id="dash-stats"></div>
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="table-card">
+            <div class="table-header">
+              <span class="title"><i class="bi bi-activity me-1"></i>Últimos movimientos</span>
+              <div class="filter-group btn-group" role="group">
+                <button class="btn btn-outline-secondary active" id="dmf-all"     onclick="setDashFilter('all',this)">Todos</button>
+                <button class="btn btn-outline-success"         id="dmf-entrada"  onclick="setDashFilter('entrada',this)">📥 Entradas</button>
+                <button class="btn btn-outline-danger"          id="dmf-salida"   onclick="setDashFilter('salida',this)">📤 Salidas</button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th></tr></thead>
+                <tbody id="dash-mov-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="table-card">
+            <div class="table-header"><span class="title"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Stock bajo</span></div>
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Producto</th><th>Stock</th></tr></thead>
+                <tbody id="dash-low-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRODUCTS -->
+    <div class="section" id="section-products">
+      <div class="table-card">
+        <div class="table-header">
+          <span class="title" id="prod-count"><i class="bi bi-box-seam me-1"></i>Productos</span>
+          <div class="d-flex gap-2">
+            <input class="form-control form-control-sm" style="width:220px" id="prod-search"
+                   placeholder="Buscar..." oninput="renderProducts()">
+            <button class="btn btn-sm btn-primary" onclick="openProductModal()">
+              <i class="bi bi-plus-lg me-1"></i>Agregar
+            </button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Código</th><th>Nombre</th><th>Marca</th><th>Ubicación</th><th>Stock</th><th></th></tr></thead>
+            <tbody id="prod-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCAN -->
+    <div class="section" id="section-scan">
+      <div class="row justify-content-center">
+        <div class="col-md-6">
+          <div class="scan-box mb-3">
+            <video id="scan-video" playsinline></video>
+            <div id="scan-frame"></div>
+            <div class="scan-ph" id="scan-ph">
+              <i class="bi bi-qr-code" style="font-size:52px;display:block;margin-bottom:12px;opacity:.3"></i>
+              Activá la cámara y apuntá<br>al código QR del producto
+            </div>
+          </div>
+          <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-primary flex-fill" id="btn-start-scan" onclick="startScan()">
+              <i class="bi bi-camera me-1"></i>Activar cámara
+            </button>
+            <button class="btn btn-outline-secondary" id="btn-stop-scan" style="display:none" onclick="stopScan()">
+              <i class="bi bi-stop-circle me-1"></i>Detener
+            </button>
+          </div>
+          <div class="input-group">
+            <input class="form-control" id="manual-code" placeholder="o ingresá el código manualmente">
+            <button class="btn btn-outline-secondary" onclick="manualLookup()">Buscar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOVEMENTS -->
+    <div class="section" id="section-movements">
+      <div class="table-card">
+        <div class="table-header">
+          <span class="title" id="mov-count"><i class="bi bi-arrow-left-right me-1"></i>Movimientos</span>
+          <div class="d-flex gap-2 flex-wrap">
+            <select class="form-select form-select-sm" style="width:auto" id="mov-period" onchange="loadMovements()">
+              <option value="week">Última semana</option>
+              <option value="2weeks" selected>Últimas 2 semanas</option>
+              <option value="month">Último mes</option>
+              <option value="all">Todos</option>
+            </select>
+            <select class="form-select form-select-sm" style="width:auto" id="mov-type" onchange="loadMovements()">
+              <option value="">Todos los tipos</option>
+              <option value="entrada">📥 Entradas</option>
+              <option value="salida">📤 Salidas</option>
+              <option value="ajuste">📌 Ajustes</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Fecha</th><th>Producto</th><th>Marca</th><th>Tipo</th><th>Cant.</th><th>Proyecto</th><th>Ubicación</th><th>Notas</th></tr></thead>
+            <tbody id="mov-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROJECTS -->
+    <div class="section" id="section-projects">
+      <div id="proj-list-view">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="btn-group filter-group" role="group">
+            <button class="btn btn-outline-secondary active" onclick="setProjFilter('all',this)">Todos</button>
+            <button class="btn btn-outline-success"          onclick="setProjFilter('activo',this)">Activos</button>
+            <button class="btn btn-outline-secondary"        onclick="setProjFilter('completado',this)">Completados</button>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="openProjectModal()">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo proyecto
+          </button>
+        </div>
+        <div class="row g-3" id="proj-grid"></div>
+      </div>
+      <div id="proj-detail-view" style="display:none"></div>
+    </div>
+
+    <!-- PURCHASES -->
+    <div class="section" id="section-purchases">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="btn-group filter-group">
+          <button class="btn btn-outline-secondary active" onclick="setPurchaseView('kanban',this)">Kanban</button>
+          <button class="btn btn-outline-secondary"        onclick="setPurchaseView('table',this)">Tabla</button>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="openPurchaseModal()">
+          <i class="bi bi-plus-lg me-1"></i>Nueva compra
+        </button>
+      </div>
+      <div id="purchases-kanban" class="row g-3"></div>
+      <div id="purchases-table" style="display:none">
+        <div class="table-card">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Producto</th><th>Proveedor</th><th>Cant.</th><th>Precio</th><th>Estado</th><th>Proyecto</th><th>F.Pedido</th><th>F.Esperada</th><th></th></tr></thead>
+              <tbody id="purchases-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ═══════════════════ MODALS ═══════════════════ -->
+
+<!-- Product modal -->
+<div class="modal fade" id="productModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="productModalTitle">Agregar producto</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="productForm" onsubmit="submitProductForm(event)">
+        <div class="modal-body">
+          <input type="hidden" id="editProductCode">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+              <input class="form-control" id="prod-name" required placeholder="Ej: Borne de carril M6">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Marca / Proveedor</label>
+              <input class="form-control" id="prod-brand" placeholder="Ej: P.CONTACT">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Código</label>
+              <input class="form-control" id="prod-code" placeholder="Se genera automáticamente">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Stock inicial</label>
+              <input class="form-control" type="number" id="prod-stock" value="0" min="0">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Ubicación</label>
+              <input class="form-control" id="prod-location" placeholder="Ej: Estante A3">
+            </div>
+          </div>
+          <!-- QR preview (only after creation) -->
+          <div id="prod-qr-zone" class="mt-3 text-center d-none">
+            <hr>
+            <div class="d-flex justify-content-center p-3 border rounded bg-white" id="prod-qr-preview"></div>
+            <div class="small text-primary fw-bold mt-1 font-monospace" id="prod-qr-label"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-2 w-100" onclick="downloadQR('prod-qr-preview','prod-qr-label')">
+              <i class="bi bi-download me-1"></i>Descargar QR
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="prodSubmitBtn">Guardar producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Move stock modal -->
+<div class="modal fade" id="moveModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mover stock</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="moveForm" onsubmit="submitMoveForm(event)">
+        <div class="modal-body">
+          <input type="hidden" id="move-code">
+          <div id="move-product-info" class="p-3 rounded mb-3" style="background:var(--sil-50);border:1px solid var(--sil-100)"></div>
+          <!-- Type toggle -->
+          <div class="btn-group w-100 mb-3" role="group" id="move-type-group">
+            <input type="radio" class="btn-check" name="moveType" id="mt-add" value="add" checked>
+            <label class="btn btn-outline-success" for="mt-add">➕ Sumar</label>
+            <input type="radio" class="btn-check" name="moveType" id="mt-sub" value="sub">
+            <label class="btn btn-outline-danger"  for="mt-sub">➖ Restar</label>
+            <input type="radio" class="btn-check" name="moveType" id="mt-set" value="set">
+            <label class="btn btn-outline-secondary" for="mt-set">📌 Fijar</label>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Cantidad</label>
+            <input class="form-control" type="number" id="move-qty" value="1" min="0" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Proyecto</label>
+            <select class="form-select" id="move-project"><option value="">Sin proyecto</option></select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Ubicación</label>
+            <input class="form-control" id="move-location" placeholder="Estantería o ubicación">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Notas</label>
+            <input class="form-control" id="move-notes" placeholder="Motivo del movimiento...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="moveSubmitBtn">
+            <i class="bi bi-check-lg me-1"></i>Confirmar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- QR view modal -->
+<div class="modal fade" id="qrModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Código QR</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="fw-bold" id="qr-modal-name"></div>
+        <div class="small text-muted font-monospace mb-3" id="qr-modal-code"></div>
+        <div class="d-flex justify-content-center p-3 border rounded bg-white" id="qr-modal-preview"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-primary" onclick="downloadQR('qr-modal-preview','qr-modal-code')">
+          <i class="bi bi-download me-1"></i>Descargar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Project modal -->
+<div class="modal fade" id="projectModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="projModalTitle">Nuevo proyecto</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="projectForm" onsubmit="submitProjectForm(event)">
+        <div class="modal-body">
+          <input type="hidden" id="edit-proj-id">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+            <input class="form-control" id="proj-name" required placeholder="Ej: Planta Sur — Tablero Principal">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Descripción</label>
+            <textarea class="form-control" id="proj-desc" rows="2" placeholder="Opcional..."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Estado</label>
+            <select class="form-select" id="proj-status">
+              <option value="activo">Activo</option>
+              <option value="pausado">Pausado</option>
+              <option value="completado">Completado</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Scan movement modal (shown after QR detected) -->
+<div class="modal fade" id="scanMoveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-qr-code me-1"></i>Registrar movimiento</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="scanMoveForm" onsubmit="submitScanMove(event)">
+        <div class="modal-body">
+          <div id="scan-product-info" class="p-3 rounded mb-3" style="background:var(--sil-50);border:1px solid var(--sil-100)"></div>
+          <div class="btn-group w-100 mb-3" role="group">
+            <input type="radio" class="btn-check" name="scanType" id="st-entrada" value="entrada" checked>
+            <label class="btn btn-outline-success" for="st-entrada">📥 Entrada</label>
+            <input type="radio" class="btn-check" name="scanType" id="st-salida" value="salida">
+            <label class="btn btn-outline-danger"  for="st-salida">📤 Salida</label>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Cantidad</label>
+              <input class="form-control" type="number" id="scan-qty" value="1" min="1" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Proyecto</label>
+              <select class="form-select" id="scan-project"><option value="">Sin proyecto</option></select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Ubicación</label>
+              <input class="form-control" id="scan-location" placeholder="Estantería o ubicación">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notas</label>
+              <input class="form-control" id="scan-notes" placeholder="Opcional...">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Confirmar movimiento
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Purchase modal -->
+<div class="modal fade" id="purchaseModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="purchModalTitle">Nueva orden de compra</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="purchaseForm" onsubmit="submitPurchaseForm(event)">
+        <div class="modal-body">
+          <input type="hidden" id="edit-purch-id">
+          <div class="row g-3">
+            <div class="col-8"><label class="form-label fw-semibold">Producto <span class="text-danger">*</span></label><input class="form-control" id="purch-name" required placeholder="Nombre del producto"></div>
+            <div class="col-4"><label class="form-label fw-semibold">Código (si existe)</label><input class="form-control" id="purch-code" placeholder="Opcional"></div>
+            <div class="col-6"><label class="form-label fw-semibold">Proveedor</label><input class="form-control" id="purch-supplier" placeholder="Ej: P.CONTACT"></div>
+            <div class="col-3"><label class="form-label fw-semibold">Cantidad</label><input class="form-control" type="number" id="purch-qty" value="1" min="1"></div>
+            <div class="col-3"><label class="form-label fw-semibold">Precio unit.</label><input class="form-control" type="number" id="purch-price" value="0" step="0.01"></div>
+            <div class="col-3"><label class="form-label fw-semibold">Moneda</label><select class="form-select" id="purch-currency"><option value="USD">USD</option><option value="ARS">ARS</option><option value="EUR">EUR</option></select></div>
+            <div class="col-3"><label class="form-label fw-semibold">Estado</label><select class="form-select" id="purch-status"><option value="pendiente">Pendiente</option><option value="ordenado">Ordenado</option><option value="en_transito">En tránsito</option><option value="recibido">Recibido</option></select></div>
+            <div class="col-6"><label class="form-label fw-semibold">Proyecto</label><select class="form-select" id="purch-project"><option value="">Sin proyecto</option></select></div>
+            <div class="col-6"><label class="form-label fw-semibold">F. Pedido</label><input class="form-control" type="date" id="purch-order-date"></div>
+            <div class="col-6"><label class="form-label fw-semibold">F. Esperada</label><input class="form-control" type="date" id="purch-exp-date"></div>
+            <div class="col-6"><label class="form-label fw-semibold">F. Recibido</label><input class="form-control" type="date" id="purch-rec-date"></div>
+            <div class="col-12"><label class="form-label fw-semibold">Notas</label><textarea class="form-control" id="purch-notes" rows="2"></textarea></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container">
+  <div id="appToast" class="toast align-items-center border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="appToastMsg"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let products  = {};
+let projects  = [];
+let purchases = [];
+let movements = [];
+let dashMovFilter = 'all';
+let dashMovCache  = [];
+let projFilter    = 'all';
+let purchaseView  = 'kanban';
+let scanProduct   = null;
+let scanning = false, stream = null, rafId = null, lastScan = 0;
+const scanCanvas = document.createElement('canvas');
+const scanCtx    = scanCanvas.getContext('2d');
+
+// ═══════════════════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════════════════
+const api = {
+  async get(url) {
+    const r = await fetch(url);
+    return r.json();
+  },
+  async post(url, data) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    return r.json();
+  },
+  async put(url, data) {
+    const r = await fetch(url, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    return r.json();
+  },
+  async del(url) {
+    const r = await fetch(url, {method:'DELETE'});
+    return r.json();
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION (persiste con localStorage)
+// ═══════════════════════════════════════════════════════
+const TAB_TITLES = {
+  dashboard:'Dashboard', products:'Productos', scan:'Escanear QR',
+  movements:'Movimientos', projects:'Proyectos', purchases:'Compras'
+};
+
+function navigate(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const sec = document.getElementById('section-' + tab);
+  if (sec) sec.classList.add('active');
+
+  document.querySelectorAll('[data-tab]').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
+
+  document.getElementById('topbar-title').textContent = TAB_TITLES[tab] || tab;
+  localStorage.setItem('activeTab', tab);
+
+  if (tab !== 'scan') stopScan();
+
+  const loaders = {
+    dashboard: loadDashboard,
+    products:  loadProducts,
+    movements: loadMovements,
+    projects:  loadProjects,
+    purchases: loadPurchases,
+  };
+  if (loaders[tab]) loaders[tab]();
+  closeSidebar();
+}
+
+// ═══════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════
+function showToast(msg, type='success') {
+  const el = document.getElementById('appToast');
+  el.className = `toast align-items-center border-0 text-white bg-${type==='error'?'danger':type==='warning'?'warning':'success'}`;
+  document.getElementById('appToastMsg').textContent = msg;
+  bootstrap.Toast.getOrCreateInstance(el, {delay:2500}).show();
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODAL HELPERS
+// ═══════════════════════════════════════════════════════
+function showModal(id) {
+  bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).show();
+}
+function hideModal(id) {
+  const el = document.getElementById(id);
+  const m  = bootstrap.Modal.getInstance(el);
+  if (m) m.hide();
+}
+
+// ═══════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtDate(dt) {
+  if (!dt) return '—';
+  return new Date(dt.replace(' ','T')).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+}
+function fmtDateFull(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt.replace(' ','T'));
+  return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})
+       + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+}
+function typeBadge(t) {
+  if (t==='entrada') return '<span class="badge badge-green">📥 Entrada</span>';
+  if (t==='salida')  return '<span class="badge badge-red">📤 Salida</span>';
+  return '<span class="badge badge-blue">📌 Ajuste</span>';
+}
+function statusBadge(s) {
+  const map = {activo:'badge-green',pausado:'badge-yellow',completado:'badge-gray'};
+  return `<span class="badge ${map[s]||'badge-gray'}">${esc(s)}</span>`;
+}
+function purchBadge(s) {
+  const map   = {pendiente:'badge-yellow',ordenado:'badge-blue',en_transito:'badge-orange',recibido:'badge-green'};
+  const label = {pendiente:'Pendiente',ordenado:'Ordenado',en_transito:'En tránsito',recibido:'Recibido'};
+  return `<span class="badge ${map[s]||'badge-gray'}">${label[s]||s}</span>`;
+}
+function genCode() {
+  let n = 1;
+  const codes = Object.keys(products);
+  while (codes.includes('PRD-' + String(n).padStart(4,'0'))) n++;
+  return 'PRD-' + String(n).padStart(4,'0');
+}
+function updateProjectDropdowns() {
+  const opts = '<option value="">Sin proyecto</option>'
+    + projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  ['move-project','scan-project','purch-project'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+}
+function productInfoHtml(p) {
+  return `<div class="fw-bold fs-6">${esc(p.name)}</div>
+    ${p.brand ? `<span class="brand-pill">${esc(p.brand)}</span>` : ''}
+    <div class="code-text mt-1">${esc(p.code)}</div>
+    <div class="mt-2">Stock actual: <strong class="fs-5 ${p.stock<=0?'text-danger':''}">${p.stock}</strong> unidades</div>
+    ${p.location ? `<div class="small text-muted mt-1">📍 ${esc(p.location)}</div>` : ''}`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════
+async function loadDashboard() {
+  const d = await api.get('/api/dashboard');
+  const icons = ['bi-box-seam','bi-stack','bi-truck','bi-cart3'];
+  const labels = ['Productos','Unidades en stock','Llegadas esta semana','Compras pendientes'];
+  const vals   = [d.total_products, d.total_stock, d.arrivals_week, d.pending_purchases];
+  document.getElementById('dash-stats').innerHTML = vals.map((v,i) => `
+    <div class="col-6 col-lg-3">
+      <div class="stat-card">
+        <i class="bi ${icons[i]} text-primary mb-2" style="font-size:22px;display:block"></i>
+        <div class="stat-val">${v}</div>
+        <div class="stat-lbl">${labels[i]}</div>
+      </div>
+    </div>`).join('');
+
+  dashMovCache = d.recent_movements || [];
+  renderDashMovements();
+
+  document.getElementById('dash-low-body').innerHTML = d.low_stock.length
+    ? d.low_stock.map(p => `<tr>
+        <td><div class="fw-semibold">${esc(p.name)}</div><div class="code-text">${esc(p.code)}</div></td>
+        <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
+      </tr>`).join('')
+    : '<tr><td colspan="2" class="text-center text-success p-3">✅ Sin alertas</td></tr>';
+}
+
+function setDashFilter(f, btn) {
+  dashMovFilter = f;
+  document.querySelectorAll('#section-dashboard .filter-group .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDashMovements();
+}
+
+function renderDashMovements() {
+  const list = dashMovFilter === 'all'
+    ? dashMovCache
+    : dashMovCache.filter(m => m.type === dashMovFilter);
+
+  document.getElementById('dash-mov-body').innerHTML = list.length
+    ? list.map(m => `<tr>
+        <td class="small text-nowrap">${fmtDateFull(m.created_at)}</td>
+        <td><div class="fw-semibold">${esc(m.product_name)}</div><div class="code-text">${esc(m.product_code)}</div></td>
+        <td>${typeBadge(m.type)}</td>
+        <td class="fw-bold">${m.qty}</td>
+        <td class="small">${esc(m.project_name||'—')}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="5" class="text-center text-muted p-3">Sin movimientos${dashMovFilter!=='all'?' de este tipo':''}</td></tr>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  PRODUCTS
+// ═══════════════════════════════════════════════════════
+async function loadProducts() {
+  const list = await api.get('/api/products');
+  products = {};
+  list.forEach(p => products[p.code] = p);
+  renderProducts();
+  updateProjectDropdowns();
+}
+
+function renderProducts() {
+  const term = (document.getElementById('prod-search').value || '').toLowerCase();
+  const list = Object.values(products).filter(p =>
+    p.name.toLowerCase().includes(term) ||
+    p.code.toLowerCase().includes(term) ||
+    (p.brand||'').toLowerCase().includes(term) ||
+    (p.location||'').toLowerCase().includes(term)
+  ).sort((a,b) => a.name.localeCompare(b.name));
+
+  document.getElementById('prod-count').innerHTML =
+    `<i class="bi bi-box-seam me-1"></i>Productos (${list.length})`;
+
+  document.getElementById('prod-body').innerHTML = list.length
+    ? list.map(p => `<tr>
+        <td class="code-text">${esc(p.code)}</td>
+        <td class="fw-semibold">${esc(p.name)}</td>
+        <td>${p.brand ? `<span class="brand-pill">${esc(p.brand)}</span>` : ''}</td>
+        <td class="small text-muted">${esc(p.location||'—')}</td>
+        <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
+        <td class="text-end" style="white-space:nowrap">
+          <button class="btn btn-sm btn-outline-primary me-1"   onclick="openMoveModal('${esc(p.code)}')">Mover</button>
+          <button class="btn btn-sm btn-outline-secondary me-1" onclick="openQRModal('${esc(p.code)}')">QR</button>
+          <button class="btn btn-sm btn-outline-warning me-1"   onclick="openEditProduct('${esc(p.code)}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger"         onclick="deleteProduct('${esc(p.code)}')"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="text-center text-muted p-4">No hay productos</td></tr>';
+}
+
+function openProductModal() {
+  document.getElementById('productModalTitle').textContent = 'Agregar producto';
+  document.getElementById('editProductCode').value = '';
+  document.getElementById('productForm').reset();
+  document.getElementById('prod-qr-zone').classList.add('d-none');
+  document.getElementById('prod-code').disabled = false;
+  document.getElementById('prod-stock').disabled = false;
+  showModal('productModal');
+}
+
+function openEditProduct(code) {
+  const p = products[code]; if (!p) return;
+  document.getElementById('productModalTitle').textContent = 'Editar producto';
+  document.getElementById('editProductCode').value = code;
+  document.getElementById('prod-name').value     = p.name;
+  document.getElementById('prod-brand').value    = p.brand || '';
+  document.getElementById('prod-code').value     = p.code;
+  document.getElementById('prod-code').disabled  = true;
+  document.getElementById('prod-stock').value    = p.stock;
+  document.getElementById('prod-stock').disabled = true;
+  document.getElementById('prod-location').value = p.location || '';
+  document.getElementById('prod-qr-zone').classList.add('d-none');
+  showModal('productModal');
+}
+
+async function submitProductForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById('prodSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  const editCode = document.getElementById('editProductCode').value;
+  const name     = document.getElementById('prod-name').value.trim();
+  const brand    = document.getElementById('prod-brand').value.trim();
+  let   code     = document.getElementById('prod-code').value.trim() || genCode();
+  const stock    = parseInt(document.getElementById('prod-stock').value) || 0;
+  const location = document.getElementById('prod-location').value.trim();
+
+  try {
+    let res;
+    if (editCode) {
+      res = await api.put(`/api/products/${encodeURIComponent(editCode)}`, {name, brand, location});
+    } else {
+      res = await api.post('/api/products', {code, name, brand, stock, location});
+    }
+
+    if (!res.success) {
+      showToast(res.error || 'Error al guardar', 'error');
+      return;
+    }
+
+    // Update local state
+    if (editCode) {
+      if (products[editCode]) {
+        products[editCode].name     = name;
+        products[editCode].brand    = brand;
+        products[editCode].location = location;
+      }
+    } else {
+      products[code] = {code, name, brand, stock, location};
+      // Show QR
+      document.getElementById('prod-qr-preview').innerHTML = '';
+      new QRCode(document.getElementById('prod-qr-preview'), {text:code, width:150, height:150, colorDark:'#1A4F9C', colorLight:'#ffffff'});
+      document.getElementById('prod-qr-label').textContent = code;
+      document.getElementById('prod-qr-zone').classList.remove('d-none');
+    }
+
+    renderProducts();
+    showToast(editCode ? 'Producto actualizado' : 'Producto creado');
+
+    if (editCode) {
+      hideModal('productModal');
+      document.getElementById('productForm').reset();
+    }
+    // If new product: keep modal open to show QR, user closes manually
+    loadDashboard();
+
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar producto';
+  }
+}
+
+async function deleteProduct(code) {
+  if (!confirm('¿Borrar este producto?')) return;
+  await api.del(`/api/products/${encodeURIComponent(code)}`);
+  delete products[code];
+  renderProducts();
+  loadDashboard();
+  showToast('Producto eliminado');
+}
+
+// ═══════════════════════════════════════════════════════
+//  MOVE STOCK MODAL
+// ═══════════════════════════════════════════════════════
+function openMoveModal(code) {
+  const p = products[code]; if (!p) return;
+  document.getElementById('move-code').value     = code;
+  document.getElementById('move-qty').value      = '1';
+  document.getElementById('move-location').value = p.location || '';
+  document.getElementById('move-notes').value    = '';
+  document.getElementById('move-product-info').innerHTML = productInfoHtml(p);
+  // Reset radio
+  document.getElementById('mt-add').checked = true;
+  showModal('moveModal');
+}
+
+async function submitMoveForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById('moveSubmitBtn');
+  btn.disabled = true;
+
+  const code     = document.getElementById('move-code').value;
+  const qty      = parseInt(document.getElementById('move-qty').value) || 0;
+  const projId   = document.getElementById('move-project').value || null;
+  const location = document.getElementById('move-location').value.trim();
+  const notes    = document.getElementById('move-notes').value.trim();
+  const typeMap  = {add:'entrada', sub:'salida', set:'ajuste'};
+  const mtype    = typeMap[document.querySelector('input[name="moveType"]:checked').value];
+
+  try {
+    const res = await api.post('/api/movements', {
+      product_code:code, type:mtype, qty, project_id:projId, location, notes
+    });
+
+    if (!res.success) {
+      showToast(res.error || 'Error', 'error');
+      return;
+    }
+
+    // 1. Cerrar modal PRIMERO
+    hideModal('moveModal');
+    document.getElementById('moveForm').reset();
+
+    // 2. Actualizar estado local inmediatamente
+    if (products[code]) {
+      products[code].stock = res.stock_after;
+      if (location) products[code].location = location;
+    }
+
+    // 3. Refrescar UI sin esperar
+    renderProducts();
+    document.getElementById('sil-stock-total') && loadDashboard();
+
+    showToast(`${products[code]?.name || code}: ahora ${res.stock_after} unidades`);
+
+    // 4. Sincronizar en background
+    loadDashboard();
+    if (document.getElementById('section-movements').classList.contains('active')) loadMovements();
+
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  QR MODAL
+// ═══════════════════════════════════════════════════════
+function openQRModal(code) {
+  const p = products[code]; if (!p) return;
+  document.getElementById('qr-modal-name').textContent = p.name;
+  document.getElementById('qr-modal-code').textContent = p.code;
+  document.getElementById('qr-modal-preview').innerHTML = '';
+  new QRCode(document.getElementById('qr-modal-preview'), {text:p.code, width:180, height:180, colorDark:'#1A4F9C', colorLight:'#ffffff'});
+  showModal('qrModal');
+}
+
+function downloadQR(previewId, labelId) {
+  const c = document.querySelector(`#${previewId} canvas`); if (!c) return;
+  const a = document.createElement('a');
+  a.download = (document.getElementById(labelId).textContent || 'qr') + '.png';
+  a.href = c.toDataURL();
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCANNER
+// ═══════════════════════════════════════════════════════
+async function startScan() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video = document.getElementById('scan-video');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('scan-frame').style.display = 'block';
+    document.getElementById('scan-ph').style.display = 'none';
+    await video.play();
+    document.getElementById('btn-start-scan').style.display = 'none';
+    document.getElementById('btn-stop-scan').style.display  = 'inline-flex';
+    scanning = true;
+    scanLoop();
+  } catch(err) {
+    showToast('No se pudo acceder a la cámara. Asegurate de usar HTTPS.', 'error');
+  }
+}
+
+function stopScan() {
+  scanning = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  const video = document.getElementById('scan-video');
+  video.style.display = 'none';
+  document.getElementById('scan-frame').style.display = 'none';
+  document.getElementById('scan-ph').style.display = 'block';
+  document.getElementById('btn-start-scan').style.display = 'inline-flex';
+  document.getElementById('btn-stop-scan').style.display  = 'none';
+}
+
+function scanLoop() {
+  if (!scanning) return;
+  const video = document.getElementById('scan-video');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    scanCanvas.width  = video.videoWidth;
+    scanCanvas.height = video.videoHeight;
+    scanCtx.drawImage(video, 0, 0);
+    const img   = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+    const found = jsQR(img.data, img.width, img.height);
+    if (found && found.data && Date.now() - lastScan > 1500) {
+      lastScan = Date.now();
+      handleScan(found.data.trim());
+    }
+  }
+  rafId = requestAnimationFrame(scanLoop);
+}
+
+function manualLookup() {
+  const c = document.getElementById('manual-code').value.trim();
+  if (c) handleScan(c);
+}
+
+function handleScan(code) {
+  const p = products[code];
+  if (!p) { showToast('Código no encontrado: ' + code, 'error'); return; }
+  scanProduct = p;
+  document.getElementById('scan-product-info').innerHTML = productInfoHtml(p);
+  document.getElementById('scan-qty').value = '1';
+  document.getElementById('scan-location').value = p.location || '';
+  document.getElementById('scan-notes').value = '';
+  document.getElementById('st-entrada').checked = true;
+  showModal('scanMoveModal');
+}
+
+async function submitScanMove(e) {
+  e.preventDefault();
+  if (!scanProduct) return;
+
+  const qty      = parseInt(document.getElementById('scan-qty').value) || 1;
+  const projId   = document.getElementById('scan-project').value || null;
+  const location = document.getElementById('scan-location').value.trim();
+  const notes    = document.getElementById('scan-notes').value.trim();
+  const mtype    = document.querySelector('input[name="scanType"]:checked').value;
+
+  const res = await api.post('/api/movements', {
+    product_code: scanProduct.code, type: mtype, qty, project_id: projId, location, notes
+  });
+
+  if (!res.success) { showToast(res.error || 'Error', 'error'); return; }
+
+  // 1. Cerrar modal
+  hideModal('scanMoveModal');
+  document.getElementById('scanMoveForm').reset();
+  document.getElementById('manual-code').value = '';
+
+  // 2. Actualizar estado local
+  const code = scanProduct.code;
+  if (products[code]) {
+    products[code].stock = res.stock_after;
+    if (location) products[code].location = location;
+  }
+
+  showToast(`${scanProduct.name}: ${mtype==='entrada'?'+':'−'}${qty} → stock: ${res.stock_after}`);
+  scanProduct = null;
+
+  // 3. Background sync
+  loadDashboard();
+}
+
+// ═══════════════════════════════════════════════════════
+//  MOVEMENTS
+// ═══════════════════════════════════════════════════════
+async function loadMovements() {
+  const period = document.getElementById('mov-period').value;
+  const mtype  = document.getElementById('mov-type').value;
+  const url    = `/api/movements?filter=${period}${mtype ? '&type='+mtype : ''}`;
+  movements    = await api.get(url);
+  document.getElementById('mov-count').innerHTML =
+    `<i class="bi bi-arrow-left-right me-1"></i>Movimientos (${movements.length})`;
+  document.getElementById('mov-body').innerHTML = movements.length
+    ? movements.map(m => `<tr>
+        <td class="small text-nowrap">${fmtDateFull(m.created_at)}</td>
+        <td><div class="fw-semibold">${esc(m.product_name)}</div><div class="code-text">${esc(m.product_code)}</div></td>
+        <td>${m.brand ? `<span class="brand-pill">${esc(m.brand)}</span>` : ''}</td>
+        <td>${typeBadge(m.type)}</td>
+        <td class="fw-bold">${m.qty}</td>
+        <td class="small">${esc(m.project_name||'—')}</td>
+        <td class="small">${esc(m.location||'—')}</td>
+        <td class="small">${esc(m.notes||'—')}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="8" class="text-center text-muted p-4">Sin movimientos en este período</td></tr>';
+}
+
+// ═══════════════════════════════════════════════════════
+//  PROJECTS
+// ═══════════════════════════════════════════════════════
+async function loadProjects() {
+  projects = await api.get('/api/projects');
+  renderProjects();
+  updateProjectDropdowns();
+}
+
+function setProjFilter(f, btn) {
+  projFilter = f;
+  document.querySelectorAll('#section-projects .filter-group .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProjects();
+}
+
+function renderProjects() {
+  const list = projFilter === 'all' ? projects : projects.filter(p => p.status === projFilter);
+  document.getElementById('proj-list-view').style.display = 'block';
+  document.getElementById('proj-detail-view').style.display = 'none';
+  document.getElementById('proj-grid').innerHTML = list.length
+    ? list.map(p => `
+      <div class="col-md-6 col-lg-4">
+        <div class="card h-100" style="cursor:pointer;border:1px solid #E5E7EB;border-radius:12px;" onclick="showProjectDetail(${p.id})">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="fw-bold mb-0">${esc(p.name)}</h6>
+              ${statusBadge(p.status)}
+            </div>
+            <p class="small text-muted mb-3">${esc(p.description||'Sin descripción')}</p>
+            <div class="d-flex gap-3 small text-muted">
+              <span><i class="bi bi-box me-1"></i>${(p.items||[]).length} productos</span>
+              <span><i class="bi bi-arrow-left-right me-1"></i>${p.movement_count||0} movimientos</span>
+            </div>
+          </div>
+          <div class="card-footer bg-transparent d-flex gap-2" onclick="event.stopPropagation()">
+            <button class="btn btn-sm btn-outline-secondary" onclick="openEditProject(${p.id})"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-danger"    onclick="deleteProject(${p.id})"><i class="bi bi-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('')
+    : '<div class="col-12 text-center text-muted p-5">No hay proyectos</div>';
+}
+
+function showProjectDetail(id) {
+  const p = projects.find(x => x.id === id); if (!p) return;
+  const items = p.items || [];
+
+  document.getElementById('proj-list-view').style.display = 'none';
+  document.getElementById('proj-detail-view').style.display = 'block';
+  document.getElementById('proj-detail-view').innerHTML = `
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <button class="btn btn-outline-secondary btn-sm" onclick="backToProjects()">
+        <i class="bi bi-arrow-left me-1"></i>Volver
+      </button>
+      <h5 class="mb-0 fw-bold">${esc(p.name)}</h5>
+      ${statusBadge(p.status)}
+    </div>
+
+    <div class="table-card mb-4">
+      <div class="table-header"><span class="title"><i class="bi bi-box-seam me-1"></i>Productos asignados</span></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Producto</th><th>Marca</th><th>📥 Entradas</th><th>📤 Salidas</th><th>Neto</th></tr></thead>
+          <tbody>${items.length
+            ? items.map(i => {
+                const neto = (i.entradas||0) - (i.salidas||0);
+                return `<tr>
+                  <td><div class="fw-semibold">${esc(i.name)}</div><div class="code-text">${esc(i.code)}</div></td>
+                  <td>${i.brand?`<span class="brand-pill">${esc(i.brand)}</span>`:''}</td>
+                  <td><span class="fw-bold text-success">${i.entradas||0}</span></td>
+                  <td><span class="fw-bold text-danger">${i.salidas||0}</span></td>
+                  <td><span class="fw-bold ${neto<0?'text-danger':''}">${neto}</span></td>
+                </tr>`;
+              }).join('')
+            : '<tr><td colspan="5" class="text-center text-muted p-3">Sin productos asignados</td></tr>'
+          }</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function backToProjects() {
+  document.getElementById('proj-list-view').style.display = 'block';
+  document.getElementById('proj-detail-view').style.display = 'none';
+}
+
+function openProjectModal() {
+  document.getElementById('projModalTitle').textContent = 'Nuevo proyecto';
+  document.getElementById('edit-proj-id').value = '';
+  document.getElementById('projectForm').reset();
+  showModal('projectModal');
+}
+
+function openEditProject(id) {
+  const p = projects.find(x => x.id === id); if (!p) return;
+  document.getElementById('projModalTitle').textContent = 'Editar proyecto';
+  document.getElementById('edit-proj-id').value  = id;
+  document.getElementById('proj-name').value     = p.name;
+  document.getElementById('proj-desc').value     = p.description || '';
+  document.getElementById('proj-status').value   = p.status;
+  showModal('projectModal');
+}
+
+async function submitProjectForm(e) {
+  e.preventDefault();
+  const id   = document.getElementById('edit-proj-id').value;
+  const name = document.getElementById('proj-name').value.trim();
+  const data = {name, description:document.getElementById('proj-desc').value.trim(), status:document.getElementById('proj-status').value};
+
+  const res = id ? await api.put(`/api/projects/${id}`, data)
+                 : await api.post('/api/projects', data);
+
+  if (!res.success) { showToast(res.error || 'Error', 'error'); return; }
+
+  hideModal('projectModal');
+  document.getElementById('projectForm').reset();
+  showToast(id ? 'Proyecto actualizado' : 'Proyecto creado');
+  await loadProjects();
+}
+
+async function deleteProject(id) {
+  if (!confirm('¿Eliminar este proyecto?')) return;
+  await api.del(`/api/projects/${id}`);
+  showToast('Proyecto eliminado');
+  await loadProjects();
+}
+
+// ═══════════════════════════════════════════════════════
+//  PURCHASES
+// ═══════════════════════════════════════════════════════
+async function loadPurchases() {
+  purchases = await api.get('/api/purchases');
+  renderPurchases();
+}
+
+function setPurchaseView(v, btn) {
+  purchaseView = v;
+  document.querySelectorAll('#section-purchases .filter-group .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('purchases-kanban').style.display = v==='kanban' ? '' : 'none';
+  document.getElementById('purchases-table').style.display  = v==='table'  ? '' : 'none';
+  renderPurchases();
+}
+
+const PURCH_STATUSES = [
+  {key:'pendiente',   label:'Pendiente',   cls:'warning'},
+  {key:'ordenado',    label:'Ordenado',    cls:'primary'},
+  {key:'en_transito', label:'En tránsito', cls:'info'},
+  {key:'recibido',    label:'Recibido',    cls:'success'},
+];
+
+function renderPurchases() {
+  // Kanban
+  document.getElementById('purchases-kanban').innerHTML = PURCH_STATUSES.map(st => {
+    const items = purchases.filter(p => p.status === st.key);
+    return `<div class="col-md-6 col-lg-3">
+      <div class="kanban-col">
+        <div class="kanban-col-title">
+          <span class="badge bg-${st.cls} me-1">●</span>${st.label} (${items.length})
+        </div>
+        ${items.map(p => `
+          <div class="kanban-card" onclick="openEditPurchase(${p.id})">
+            <div class="fw-semibold small">${esc(p.product_name)}</div>
+            <div class="text-muted" style="font-size:11px;">${esc(p.supplier||'—')} · ${p.qty} u · ${p.currency} ${(p.unit_price||0).toFixed(2)}</div>
+            ${p.project_name ? `<div style="font-size:11px;color:var(--sil-600)">🏗️ ${esc(p.project_name)}</div>` : ''}
+            ${p.expected_date ? `<div style="font-size:11px;color:#6B7280">📅 ${p.expected_date}</div>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Table
+  document.getElementById('purchases-body').innerHTML = purchases.length
+    ? purchases.map(p => `<tr>
+        <td><div class="fw-semibold">${esc(p.product_name)}</div>${p.product_code?`<div class="code-text">${esc(p.product_code)}</div>`:''}</td>
+        <td class="small">${esc(p.supplier||'—')}</td>
+        <td>${p.qty}</td>
+        <td class="small">${p.currency} ${(p.unit_price||0).toFixed(2)}</td>
+        <td>${purchBadge(p.status)}</td>
+        <td class="small">${esc(p.project_name||'—')}</td>
+        <td class="small">${p.order_date||'—'}</td>
+        <td class="small">${p.expected_date||'—'}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-warning me-1" onclick="openEditPurchase(${p.id})"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger"       onclick="deletePurchase(${p.id})"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="9" class="text-center text-muted p-4">Sin órdenes de compra</td></tr>';
+}
+
+function openPurchaseModal() {
+  document.getElementById('purchModalTitle').textContent = 'Nueva orden de compra';
+  document.getElementById('edit-purch-id').value = '';
+  document.getElementById('purchaseForm').reset();
+  showModal('purchaseModal');
+}
+
+function openEditPurchase(id) {
+  const p = purchases.find(x => x.id === id); if (!p) return;
+  document.getElementById('purchModalTitle').textContent = 'Editar orden de compra';
+  document.getElementById('edit-purch-id').value        = id;
+  document.getElementById('purch-name').value           = p.product_name;
+  document.getElementById('purch-code').value           = p.product_code || '';
+  document.getElementById('purch-supplier').value       = p.supplier || '';
+  document.getElementById('purch-qty').value            = p.qty;
+  document.getElementById('purch-price').value          = p.unit_price || 0;
+  document.getElementById('purch-currency').value       = p.currency || 'USD';
+  document.getElementById('purch-status').value         = p.status;
+  document.getElementById('purch-project').value        = p.project_id || '';
+  document.getElementById('purch-order-date').value     = p.order_date || '';
+  document.getElementById('purch-exp-date').value       = p.expected_date || '';
+  document.getElementById('purch-rec-date').value       = p.received_date || '';
+  document.getElementById('purch-notes').value          = p.notes || '';
+  showModal('purchaseModal');
+}
+
+async function submitPurchaseForm(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-purch-id').value;
+  const data = {
+    product_name:  document.getElementById('purch-name').value.trim(),
+    product_code:  document.getElementById('purch-code').value.trim(),
+    supplier:      document.getElementById('purch-supplier').value.trim(),
+    qty:           parseInt(document.getElementById('purch-qty').value) || 1,
+    unit_price:    parseFloat(document.getElementById('purch-price').value) || 0,
+    currency:      document.getElementById('purch-currency').value,
+    status:        document.getElementById('purch-status').value,
+    project_id:    document.getElementById('purch-project').value || null,
+    order_date:    document.getElementById('purch-order-date').value || null,
+    expected_date: document.getElementById('purch-exp-date').value || null,
+    received_date: document.getElementById('purch-rec-date').value || null,
+    notes:         document.getElementById('purch-notes').value,
+  };
+  const res = id ? await api.put(`/api/purchases/${id}`, data)
+                 : await api.post('/api/purchases', data);
+  if (!res.success) { showToast(res.error || 'Error', 'error'); return; }
+  hideModal('purchaseModal');
+  document.getElementById('purchaseForm').reset();
+  showToast(id ? 'Orden actualizada' : 'Orden creada');
+  await loadPurchases();
+  loadDashboard();
+}
+
+async function deletePurchase(id) {
+  if (!confirm('¿Eliminar esta orden?')) return;
+  await api.del(`/api/purchases/${id}`);
+  showToast('Orden eliminada');
+  await loadPurchases();
+  loadDashboard();
+}
+
+// ═══════════════════════════════════════════════════════
+//  GLOBAL SEARCH
+// ═══════════════════════════════════════════════════════
+function handleGlobalSearch(val) {
+  if (!val) return;
+  navigate('products');
+  document.getElementById('prod-search').value = val;
+  renderProducts();
+}
+
+// ═══════════════════════════════════════════════════════
+//  MOBILE SIDEBAR
+// ═══════════════════════════════════════════════════════
+document.getElementById('sb-toggle').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sb-overlay').classList.toggle('show');
+});
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sb-overlay').classList.remove('show');
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+async function init() {
+  await loadProducts();
+  await loadProjects();
+  await loadDashboard();
+
+  // Restaurar pestaña guardada
+  const saved = localStorage.getItem('activeTab') || 'dashboard';
+  navigate(saved);
+}
+
+init();
+</script>
+</body>
+</html>
