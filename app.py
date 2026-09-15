@@ -2,10 +2,11 @@
 Inventario QR — Silicom
 Flask + SQLite (local/.exe) | PostgreSQL (Vercel + Supabase)
 Todos los endpoints POST retornan {"success": true} con HTTP 200.
+Todos los errores (incluso inesperados) retornan JSON, nunca HTML.
 """
-import os, sys, json, socket
-from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, g, render_template, send_from_directory
+import os, sys, json, socket, decimal, datetime
+from datetime import timedelta
+from flask import Flask, jsonify, request, g, render_template
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 if getattr(sys, 'frozen', False):
@@ -32,6 +33,44 @@ app = Flask(__name__,
             static_url_path="/static")
 
 
+# ── JSON safety: nunca dejar pasar un error como HTML ─────────────────────────
+class ApiError(Exception):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+@app.errorhandler(ApiError)
+def handle_api_error(e):
+    return jsonify({"success": False, "error": e.message}), e.status
+
+@app.errorhandler(Exception)
+def handle_any_error(e):
+    """Red de seguridad: cualquier excepción no controlada se devuelve como
+    JSON (nunca como página HTML de error), para que el frontend siempre
+    pueda leer la respuesta y mostrar el mensaje real en vez de fallar en
+    silencio."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify({"success": False, "error": e.description}), e.code
+    app.logger.exception("Error no controlado")
+    return jsonify({"success": False, "error": f"Error del servidor: {e}"}), 500
+
+
+def _json_safe(value):
+    """Convierte tipos que psycopg2 puede devolver (datetime, date, Decimal)
+    a algo serializable en JSON, sin depender del comportamiento por
+    defecto de Flask."""
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    return value
+
+def _row_safe(d):
+    return {k: _json_safe(v) for k, v in d.items()}
+
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 def get_db():
     if "db" not in g:
@@ -52,55 +91,70 @@ def close_db(e=None):
 
 def _exec(sql, params=()):
     db = get_db()
-    if USE_PG:
-        import psycopg2.extras
-        cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(sql.replace("?", "%s"), params)
+    try:
+        if USE_PG:
+            import psycopg2.extras
+            cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(sql.replace("?", "%s"), params)
+            db.commit()
+            return cur
+        cur = db.execute(sql, params)
         db.commit()
         return cur
-    cur = db.execute(sql, params)
-    db.commit()
-    return cur
+    except Exception:
+        db.rollback()
+        raise
 
 def db_all(sql, params=()):
     cur = _exec(sql, params)
-    return [dict(r) for r in cur.fetchall()]
+    return [_row_safe(dict(r)) for r in cur.fetchall()]
 
 def db_one(sql, params=()):
     cur = _exec(sql, params)
     r = cur.fetchone()
-    return dict(r) if r else None
+    return _row_safe(dict(r)) if r else None
 
 def db_run(sql, params=()):
     _exec(sql, params)
 
+def _first_value(row):
+    """Devuelve el primer valor de una fila. Tanto sqlite3.Row como
+    RealDictRow (psycopg2) soportan .keys() y acceso por nombre de
+    columna, así que usamos ese camino para los dos por igual."""
+    first_key = list(row.keys())[0]
+    return row[first_key]
+
 def db_scalar(sql, params=()):
     cur = _exec(sql, params)
     r = cur.fetchone()
-    return (r[0] if isinstance(r, (list, tuple)) else list(r.values())[0]) if r else None
+    if not r:
+        return None
+    return _json_safe(_first_value(r))
 
 def db_insert(sql, params=()):
     db = get_db()
-    if USE_PG:
-        import psycopg2.extras
-        cur = db.cursor()
-        cur.execute((sql + " RETURNING id").replace("?", "%s"), params)
+    try:
+        if USE_PG:
+            cur = db.cursor()
+            cur.execute((sql + " RETURNING id").replace("?", "%s"), params)
+            db.commit()
+            r = cur.fetchone()
+            return r[0] if r else None
+        cur = db.execute(sql, params)
         db.commit()
-        r = cur.fetchone()
-        return r[0] if r else None
-    cur = db.execute(sql, params)
-    db.commit()
-    return cur.lastrowid
+        return cur.lastrowid
+    except Exception:
+        db.rollback()
+        raise
 
 def ok(**kwargs):
-    """Respuesta estándar de éxito."""
     return jsonify({"success": True, **kwargs}), 200
 
 def err(msg, status=400):
     return jsonify({"success": False, "error": msg}), status
 
 
-# ── Init DB ───────────────────────────────────────────────────────────────────
+# ── Init DB (idempotente — se puede llamar en cada arranque sin romper nada) ──
 def init_db():
     if USE_PG:
         import psycopg2
@@ -133,6 +187,22 @@ def init_db():
                 project_id INTEGER, order_date DATE, expected_date DATE,
                 received_date DATE, notes TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        # Migraciones defensivas: si las tablas ya existían de una versión
+        # anterior sin estas columnas, se agregan ahora. Es seguro correr
+        # esto en cada arranque (IF NOT EXISTS no rompe nada si ya están).
+        for stmt in [
+            "ALTER TABLE products  ADD COLUMN IF NOT EXISTS location TEXT DEFAULT ''",
+            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS project_id INTEGER",
+            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS location TEXT DEFAULT ''",
+            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
+            "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS project_id INTEGER",
+        ]:
+            try:
+                cur.execute(stmt)
+            except Exception as mig_err:
+                print(f"[DB] migración omitida ({stmt}): {mig_err}")
+        conn.commit()
+
         cur.execute("SELECT COUNT(*) FROM products")
         if cur.fetchone()[0] == 0 and os.path.exists(SEED_PATH):
             with open(SEED_PATH, encoding="utf-8") as f:
@@ -141,8 +211,9 @@ def init_db():
                 cur.execute(
                     "INSERT INTO products (code,name,brand,stock) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                     (s["code"], s["name"], s.get("brand",""), s.get("stock",0)))
+            conn.commit()
             print(f"[DB] {len(seed)} productos cargados (PostgreSQL)")
-        conn.commit(); conn.close()
+        conn.close()
     else:
         import sqlite3
         conn = sqlite3.connect(DB_PATH)
@@ -185,10 +256,36 @@ def init_db():
         conn.close()
 
 
+# En Vercel el bloque `if __name__ == "__main__"` nunca se ejecuta, porque
+# el runtime importa `app` directamente. Por eso init_db() se llama acá,
+# a nivel de módulo, envuelto en try/except para no tumbar el arranque
+# si la base de datos está temporalmente inaccesible.
+try:
+    init_db()
+except Exception as _init_err:
+    print(f"[DB] init_db() falló al importar: {_init_err}")
+
+
 # ── Rutas estáticas ───────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Diagnóstico rápido: entrar a /api/health desde el navegador para ver
+    si la base de datos está conectada y qué modo está usando."""
+    info = {"db_mode": "postgres" if USE_PG else "sqlite"}
+    try:
+        info["products_count"]  = db_scalar("SELECT COUNT(*) FROM products")
+        info["projects_count"]  = db_scalar("SELECT COUNT(*) FROM projects")
+        info["movements_count"] = db_scalar("SELECT COUNT(*) FROM movements")
+        info["purchases_count"] = db_scalar("SELECT COUNT(*) FROM purchases")
+        info["connected"] = True
+    except Exception as e:
+        info["connected"] = False
+        info["error"] = str(e)
+    return jsonify(info)
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -235,13 +332,13 @@ def list_movements():
 
     if filt == "week":
         where.append("m.created_at >= ?")
-        params.append((datetime.now() - timedelta(days=7)).isoformat())
+        params.append((datetime.datetime.now() - timedelta(days=7)).isoformat())
     elif filt == "2weeks":
         where.append("m.created_at >= ?")
-        params.append((datetime.now() - timedelta(days=14)).isoformat())
+        params.append((datetime.datetime.now() - timedelta(days=14)).isoformat())
     elif filt == "month":
         where.append("m.created_at >= ?")
-        params.append((datetime.now() - timedelta(days=30)).isoformat())
+        params.append((datetime.datetime.now() - timedelta(days=30)).isoformat())
 
     if mtype:   where.append("m.type = ?");        params.append(mtype)
     if proj_id: where.append("m.project_id = ?");  params.append(proj_id)
@@ -263,7 +360,8 @@ def create_movement():
     code       = (d.get("product_code") or "").strip()
     mtype      = d.get("type", "entrada")
     qty        = int(d.get("qty") or 1)
-    project_id = d.get("project_id") or None
+    raw_proj   = d.get("project_id")
+    project_id = int(raw_proj) if raw_proj not in (None, "", "null") else None
     location   = (d.get("location") or "").strip()
     notes      = (d.get("notes") or "").strip()
 
@@ -306,7 +404,7 @@ def list_projects():
             GROUP BY m.product_code, m.product_name, pr.brand
             ORDER BY m.product_name
         """, (p["id"],))
-        p["movement_count"] = sum(i["movimientos"] for i in p["items"])
+        p["movement_count"] = sum(int(i["movimientos"] or 0) for i in p["items"])
     return jsonify(projects)
 
 @app.route("/api/projects", methods=["POST"])
@@ -345,13 +443,15 @@ def list_purchases():
 @app.route("/api/purchases", methods=["POST"])
 def create_purchase():
     d = request.get_json(force=True)
+    raw_proj = d.get("project_id")
+    project_id = int(raw_proj) if raw_proj not in (None, "", "null") else None
     new_id = db_insert("""INSERT INTO purchases
         (product_code,product_name,supplier,qty,unit_price,currency,
          status,project_id,order_date,expected_date,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (d.get("product_code",""), d.get("product_name",""), d.get("supplier",""),
          int(d.get("qty") or 1), float(d.get("unit_price") or 0),
          d.get("currency","USD"), d.get("status","pendiente"),
-         d.get("project_id") or None,
+         project_id,
          d.get("order_date") or None, d.get("expected_date") or None,
          d.get("notes","")))
     return ok(id=new_id)
@@ -359,13 +459,15 @@ def create_purchase():
 @app.route("/api/purchases/<int:pid>", methods=["PUT"])
 def update_purchase(pid):
     d = request.get_json(force=True)
+    raw_proj = d.get("project_id")
+    project_id = int(raw_proj) if raw_proj not in (None, "", "null") else None
     db_run("""UPDATE purchases SET product_code=?,product_name=?,supplier=?,qty=?,
         unit_price=?,currency=?,status=?,project_id=?,order_date=?,expected_date=?,
         received_date=?,notes=? WHERE id=?""",
         (d.get("product_code",""), d.get("product_name",""), d.get("supplier",""),
          int(d.get("qty") or 1), float(d.get("unit_price") or 0),
          d.get("currency","USD"), d.get("status","pendiente"),
-         d.get("project_id") or None,
+         project_id,
          d.get("order_date") or None, d.get("expected_date") or None,
          d.get("received_date") or None, d.get("notes",""), pid))
     return ok()
@@ -379,7 +481,7 @@ def delete_purchase(pid):
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.route("/api/dashboard", methods=["GET"])
 def dashboard():
-    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+    week_ago = (datetime.datetime.now() - timedelta(days=7)).isoformat()
     return jsonify({
         "total_products":    db_scalar("SELECT COUNT(*) FROM products") or 0,
         "total_stock":       db_scalar("SELECT SUM(stock) FROM products") or 0,
@@ -395,9 +497,8 @@ def dashboard():
     })
 
 
-# ── Run ───────────────────────────────────────────────────────────────────────
+# ── Run (solo modo local / .exe) ───────────────────────────────────────────────
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     cert = os.path.join(BASE_DIR, "cert.pem")
     key  = os.path.join(BASE_DIR, "key.pem")
