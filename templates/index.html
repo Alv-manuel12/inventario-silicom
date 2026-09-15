@@ -553,32 +553,69 @@ const scanCanvas = document.createElement('canvas');
 const scanCtx    = scanCanvas.getContext('2d');
 
 // ═══════════════════════════════════════════════════════
-//  API
+//  API — ahora nunca deja pasar una respuesta rota en
+//  silencio: si el servidor devuelve algo que no es JSON
+//  válido, o la conexión falla, se muestra un toast con el
+//  motivo real en vez de dejar el modal colgado sin avisar.
 // ═══════════════════════════════════════════════════════
+async function safeJson(r) {
+  const text = await r.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`El servidor respondió algo inesperado (HTTP ${r.status}). Detalle: ${text.slice(0,180)}`);
+  }
+}
+
 const api = {
   async get(url) {
-    const r = await fetch(url);
-    return r.json();
+    try {
+      const r = await fetch(url);
+      const data = await safeJson(r);
+      if (!r.ok) { showToast(data.error || `Error ${r.status}`, 'error'); return Array.isArray(data) ? data : []; }
+      return data;
+    } catch (e) {
+      showToast(e.message || 'No se pudo conectar con el servidor', 'error');
+      return [];
+    }
   },
   async post(url, data) {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(data)
-    });
-    return r.json();
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data)
+      });
+      const res = await safeJson(r);
+      if (!r.ok && res.success === undefined) res.success = false;
+      return res;
+    } catch (e) {
+      return { success:false, error: e.message || 'No se pudo conectar con el servidor' };
+    }
   },
   async put(url, data) {
-    const r = await fetch(url, {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(data)
-    });
-    return r.json();
+    try {
+      const r = await fetch(url, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data)
+      });
+      const res = await safeJson(r);
+      if (!r.ok && res.success === undefined) res.success = false;
+      return res;
+    } catch (e) {
+      return { success:false, error: e.message || 'No se pudo conectar con el servidor' };
+    }
   },
   async del(url) {
-    const r = await fetch(url, {method:'DELETE'});
-    return r.json();
+    try {
+      const r = await fetch(url, {method:'DELETE'});
+      const res = await safeJson(r);
+      if (!r.ok && res.success === undefined) res.success = false;
+      return res;
+    } catch (e) {
+      return { success:false, error: e.message || 'No se pudo conectar con el servidor' };
+    }
   }
 };
 
@@ -621,7 +658,7 @@ function showToast(msg, type='success') {
   const el = document.getElementById('appToast');
   el.className = `toast align-items-center border-0 text-white bg-${type==='error'?'danger':type==='warning'?'warning':'success'}`;
   document.getElementById('appToastMsg').textContent = msg;
-  bootstrap.Toast.getOrCreateInstance(el, {delay:2500}).show();
+  bootstrap.Toast.getOrCreateInstance(el, {delay:4000}).show();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -694,6 +731,7 @@ function productInfoHtml(p) {
 // ═══════════════════════════════════════════════════════
 async function loadDashboard() {
   const d = await api.get('/api/dashboard');
+  if (!d || typeof d !== 'object') return;
   const icons = ['bi-box-seam','bi-stack','bi-truck','bi-cart3'];
   const labels = ['Productos','Unidades en stock','Llegadas esta semana','Compras pendientes'];
   const vals   = [d.total_products, d.total_stock, d.arrivals_week, d.pending_purchases];
@@ -701,7 +739,7 @@ async function loadDashboard() {
     <div class="col-6 col-lg-3">
       <div class="stat-card">
         <i class="bi ${icons[i]} text-primary mb-2" style="font-size:22px;display:block"></i>
-        <div class="stat-val">${v}</div>
+        <div class="stat-val">${v ?? 0}</div>
         <div class="stat-lbl">${labels[i]}</div>
       </div>
     </div>`).join('');
@@ -709,8 +747,9 @@ async function loadDashboard() {
   dashMovCache = d.recent_movements || [];
   renderDashMovements();
 
-  document.getElementById('dash-low-body').innerHTML = d.low_stock.length
-    ? d.low_stock.map(p => `<tr>
+  const lowStock = d.low_stock || [];
+  document.getElementById('dash-low-body').innerHTML = lowStock.length
+    ? lowStock.map(p => `<tr>
         <td><div class="fw-semibold">${esc(p.name)}</div><div class="code-text">${esc(p.code)}</div></td>
         <td><span class="stock-num ${p.stock<=0?'low':''}">${p.stock}</span></td>
       </tr>`).join('')
@@ -746,7 +785,7 @@ function renderDashMovements() {
 async function loadProducts() {
   const list = await api.get('/api/products');
   products = {};
-  list.forEach(p => products[p.code] = p);
+  (list || []).forEach(p => products[p.code] = p);
   renderProducts();
   updateProjectDropdowns();
 }
@@ -864,7 +903,8 @@ async function submitProductForm(e) {
 
 async function deleteProduct(code) {
   if (!confirm('¿Borrar este producto?')) return;
-  await api.del(`/api/products/${encodeURIComponent(code)}`);
+  const res = await api.del(`/api/products/${encodeURIComponent(code)}`);
+  if (res && res.success === false) { showToast(res.error || 'Error al borrar', 'error'); return; }
   delete products[code];
   renderProducts();
   loadDashboard();
@@ -921,7 +961,6 @@ async function submitMoveForm(e) {
 
     // 3. Refrescar UI sin esperar
     renderProducts();
-    document.getElementById('sil-stock-total') && loadDashboard();
 
     showToast(`${products[code]?.name || code}: ahora ${res.stock_after} unidades`);
 
@@ -1064,6 +1103,7 @@ async function loadMovements() {
   const mtype  = document.getElementById('mov-type').value;
   const url    = `/api/movements?filter=${period}${mtype ? '&type='+mtype : ''}`;
   movements    = await api.get(url);
+  if (!Array.isArray(movements)) movements = [];
   document.getElementById('mov-count').innerHTML =
     `<i class="bi bi-arrow-left-right me-1"></i>Movimientos (${movements.length})`;
   document.getElementById('mov-body').innerHTML = movements.length
@@ -1084,7 +1124,8 @@ async function loadMovements() {
 //  PROJECTS
 // ═══════════════════════════════════════════════════════
 async function loadProjects() {
-  projects = await api.get('/api/projects');
+  const list = await api.get('/api/projects');
+  projects = Array.isArray(list) ? list : [];
   renderProjects();
   updateProjectDropdowns();
 }
@@ -1203,7 +1244,8 @@ async function submitProjectForm(e) {
 
 async function deleteProject(id) {
   if (!confirm('¿Eliminar este proyecto?')) return;
-  await api.del(`/api/projects/${id}`);
+  const res = await api.del(`/api/projects/${id}`);
+  if (res && res.success === false) { showToast(res.error || 'Error al eliminar', 'error'); return; }
   showToast('Proyecto eliminado');
   await loadProjects();
 }
@@ -1212,7 +1254,8 @@ async function deleteProject(id) {
 //  PURCHASES
 // ═══════════════════════════════════════════════════════
 async function loadPurchases() {
-  purchases = await api.get('/api/purchases');
+  const list = await api.get('/api/purchases');
+  purchases = Array.isArray(list) ? list : [];
   renderPurchases();
 }
 
@@ -1326,7 +1369,8 @@ async function submitPurchaseForm(e) {
 
 async function deletePurchase(id) {
   if (!confirm('¿Eliminar esta orden?')) return;
-  await api.del(`/api/purchases/${id}`);
+  const res = await api.del(`/api/purchases/${id}`);
+  if (res && res.success === false) { showToast(res.error || 'Error al eliminar', 'error'); return; }
   showToast('Orden eliminada');
   await loadPurchases();
   loadDashboard();
