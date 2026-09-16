@@ -206,14 +206,6 @@ REQUIRED_COLUMNS = {
     },
 }
 
-# Columnas heredadas de esquemas anteriores que pueden traer una restricción
-# NOT NULL sin default y romper los INSERT actuales (que no las completan).
-# Si existen, se les quita esa restricción; si no existen, no pasa nada.
-LEGACY_NULLABLE_FIXES = {
-    "movements": ["product_id"],
-    "purchases": ["product_id"],
-}
-
 def _ensure_columns_pg(cur, table, columns):
     cur.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
@@ -228,14 +220,6 @@ def _ensure_columns_pg(cur, table, columns):
             _MIGRATION_LOG.append(f"{table}.{col} agregada")
         except Exception as e:
             _MIGRATION_LOG.append(f"{table}.{col} FALLÓ: {e}")
-
-def _fix_legacy_not_null_pg(cur, table, cols):
-    for col in cols:
-        try:
-            cur.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
-            _MIGRATION_LOG.append(f"{table}.{col}: restricción NOT NULL heredada removida")
-        except Exception:
-            pass  # la columna no existe o ya era nullable — no hay nada que hacer
 
 def _ensure_columns_sqlite(conn, table, columns):
     existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -255,6 +239,25 @@ def _ensure_columns_sqlite(conn, table, columns):
             _MIGRATION_LOG.append(f"{table}.{col} agregada (sqlite)")
         except Exception as e:
             _MIGRATION_LOG.append(f"{table}.{col} FALLÓ (sqlite): {e}")
+
+def _relax_unexpected_not_null_pg(cur, table, known_columns):
+    """Busca TODAS las columnas NOT NULL sin default en la tabla real
+    (columnas heredadas de un esquema anterior, con el nombre que sea)
+    que mi código no completa al insertar, y les saca esa restricción.
+    Esto evita tener que enumerar a mano cada columna vieja que va
+    apareciendo (product_id, quantity, o cualquier otra que exista)."""
+    cur.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = %s AND is_nullable = 'NO' AND column_default IS NULL
+    """, (table,))
+    not_null_cols = {r[0] for r in cur.fetchall()}
+    unexpected = not_null_cols - set(known_columns) - {"id"}
+    for col in unexpected:
+        try:
+            cur.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
+            _MIGRATION_LOG.append(f"{table}.{col}: columna heredada, NOT NULL removido")
+        except Exception as e:
+            _MIGRATION_LOG.append(f"{table}.{col}: no se pudo relajar NOT NULL: {e}")
 
 
 # ── Init DB (idempotente — se puede llamar en cada arranque sin romper nada) ──
@@ -292,14 +295,17 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         conn.commit()
 
-        # Reconciliar esquema real contra lo que el código necesita —
-        # esto es lo que resuelve tablas heredadas con columnas distintas
-        # (como movements.product_id en vez de movements.product_code).
+        # 1. Agregar cualquier columna que el código necesite y no exista.
         for table, cols in REQUIRED_COLUMNS.items():
             _ensure_columns_pg(cur, table, cols)
-        for table, cols in LEGACY_NULLABLE_FIXES.items():
-            _fix_legacy_not_null_pg(cur, table, cols)
         conn.commit()
+
+        # 2. Sacarle NOT NULL a cualquier columna heredada (de nombre
+        #    desconocido de antemano) que el código no complete.
+        for table, cols in REQUIRED_COLUMNS.items():
+            _relax_unexpected_not_null_pg(cur, table, cols.keys())
+        conn.commit()
+
         if _MIGRATION_LOG:
             print("[DB] Migraciones aplicadas:")
             for line in _MIGRATION_LOG:
