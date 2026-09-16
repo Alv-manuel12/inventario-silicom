@@ -154,6 +154,109 @@ def err(msg, status=400):
     return jsonify({"success": False, "error": msg}), status
 
 
+# ── Reconciliación automática de esquema ──────────────────────────────────────
+# En vez de agregar columnas puntuales cada vez que aparece una sorpresa,
+# esto compara —en cada arranque— las columnas que el código realmente
+# necesita contra las que existen de verdad en la base, y agrega solo las
+# que faltan. Si en el futuro se agrega un campo nuevo a alguna función,
+# se autocorrige solo en el próximo despliegue, sin intervención manual.
+_MIGRATION_LOG = []
+
+REQUIRED_COLUMNS = {
+    "products": {
+        "code":       "TEXT",
+        "name":       "TEXT DEFAULT ''",
+        "brand":      "TEXT DEFAULT ''",
+        "stock":      "INTEGER DEFAULT 0",
+        "location":   "TEXT DEFAULT ''",
+        "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    },
+    "movements": {
+        "product_code": "TEXT DEFAULT ''",
+        "product_name": "TEXT DEFAULT ''",
+        "type":         "TEXT DEFAULT 'entrada'",
+        "qty":          "INTEGER DEFAULT 0",
+        "stock_before": "INTEGER",
+        "stock_after":  "INTEGER",
+        "project_id":   "INTEGER",
+        "location":     "TEXT DEFAULT ''",
+        "notes":        "TEXT DEFAULT ''",
+        "created_at":   "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    },
+    "projects": {
+        "name":        "TEXT DEFAULT ''",
+        "description": "TEXT DEFAULT ''",
+        "status":      "TEXT DEFAULT 'activo'",
+        "created_at":  "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    },
+    "purchases": {
+        "product_code":  "TEXT DEFAULT ''",
+        "product_name":  "TEXT DEFAULT ''",
+        "supplier":      "TEXT DEFAULT ''",
+        "qty":           "INTEGER DEFAULT 1",
+        "unit_price":    "REAL DEFAULT 0",
+        "currency":      "TEXT DEFAULT 'USD'",
+        "status":        "TEXT DEFAULT 'pendiente'",
+        "project_id":    "INTEGER",
+        "order_date":    "DATE",
+        "expected_date": "DATE",
+        "received_date": "DATE",
+        "notes":         "TEXT DEFAULT ''",
+        "created_at":    "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    },
+}
+
+# Columnas heredadas de esquemas anteriores que pueden traer una restricción
+# NOT NULL sin default y romper los INSERT actuales (que no las completan).
+# Si existen, se les quita esa restricción; si no existen, no pasa nada.
+LEGACY_NULLABLE_FIXES = {
+    "movements": ["product_id"],
+    "purchases": ["product_id"],
+}
+
+def _ensure_columns_pg(cur, table, columns):
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,)
+    )
+    existing = {r[0] for r in cur.fetchall()}
+    for col, coltype in columns.items():
+        if col in existing or col == "code":  # 'code' es PK, no se toca por ALTER
+            continue
+        try:
+            cur.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}')
+            _MIGRATION_LOG.append(f"{table}.{col} agregada")
+        except Exception as e:
+            _MIGRATION_LOG.append(f"{table}.{col} FALLÓ: {e}")
+
+def _fix_legacy_not_null_pg(cur, table, cols):
+    for col in cols:
+        try:
+            cur.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
+            _MIGRATION_LOG.append(f"{table}.{col}: restricción NOT NULL heredada removida")
+        except Exception:
+            pass  # la columna no existe o ya era nullable — no hay nada que hacer
+
+def _ensure_columns_sqlite(conn, table, columns):
+    existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for col, coltype in columns.items():
+        if col in existing or col == "code":
+            continue
+        try:
+            simple_type = coltype.split(" DEFAULT")[0].split(" ")[0]
+            # SQLite no permite ALTER TABLE ... ADD COLUMN con un default
+            # no-constante como CURRENT_TIMESTAMP; en ese caso se agrega
+            # sin default (las filas existentes quedan con NULL ahí, que
+            # es aceptable para una columna de auditoría).
+            default = ""
+            if "DEFAULT" in coltype and "CURRENT_TIMESTAMP" not in coltype:
+                default = " DEFAULT" + coltype.split("DEFAULT")[1]
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {simple_type}{default}')
+            _MIGRATION_LOG.append(f"{table}.{col} agregada (sqlite)")
+        except Exception as e:
+            _MIGRATION_LOG.append(f"{table}.{col} FALLÓ (sqlite): {e}")
+
+
 # ── Init DB (idempotente — se puede llamar en cada arranque sin romper nada) ──
 def init_db():
     if USE_PG:
@@ -187,21 +290,20 @@ def init_db():
                 project_id INTEGER, order_date DATE, expected_date DATE,
                 received_date DATE, notes TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
-        # Migraciones defensivas: si las tablas ya existían de una versión
-        # anterior sin estas columnas, se agregan ahora. Es seguro correr
-        # esto en cada arranque (IF NOT EXISTS no rompe nada si ya están).
-        for stmt in [
-            "ALTER TABLE products  ADD COLUMN IF NOT EXISTS location TEXT DEFAULT ''",
-            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS project_id INTEGER",
-            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS location TEXT DEFAULT ''",
-            "ALTER TABLE movements ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
-            "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS project_id INTEGER",
-        ]:
-            try:
-                cur.execute(stmt)
-            except Exception as mig_err:
-                print(f"[DB] migración omitida ({stmt}): {mig_err}")
         conn.commit()
+
+        # Reconciliar esquema real contra lo que el código necesita —
+        # esto es lo que resuelve tablas heredadas con columnas distintas
+        # (como movements.product_id en vez de movements.product_code).
+        for table, cols in REQUIRED_COLUMNS.items():
+            _ensure_columns_pg(cur, table, cols)
+        for table, cols in LEGACY_NULLABLE_FIXES.items():
+            _fix_legacy_not_null_pg(cur, table, cols)
+        conn.commit()
+        if _MIGRATION_LOG:
+            print("[DB] Migraciones aplicadas:")
+            for line in _MIGRATION_LOG:
+                print(f"     - {line}")
 
         cur.execute("SELECT COUNT(*) FROM products")
         if cur.fetchone()[0] == 0 and os.path.exists(SEED_PATH):
@@ -243,8 +345,9 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         """)
         conn.commit()
-        try: conn.execute("ALTER TABLE products ADD COLUMN location TEXT DEFAULT ''"); conn.commit()
-        except: pass
+        for table, cols in REQUIRED_COLUMNS.items():
+            _ensure_columns_sqlite(conn, table, cols)
+        conn.commit()
         if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0 and os.path.exists(SEED_PATH):
             with open(SEED_PATH, encoding="utf-8") as f:
                 seed = json.load(f)
@@ -274,8 +377,9 @@ def index():
 @app.route("/api/health", methods=["GET"])
 def health():
     """Diagnóstico rápido: entrar a /api/health desde el navegador para ver
-    si la base de datos está conectada y qué modo está usando."""
-    info = {"db_mode": "postgres" if USE_PG else "sqlite"}
+    si la base de datos está conectada, qué modo está usando, y qué
+    columnas se agregaron automáticamente en el último arranque."""
+    info = {"db_mode": "postgres" if USE_PG else "sqlite", "migrations_last_startup": _MIGRATION_LOG}
     try:
         info["products_count"]  = db_scalar("SELECT COUNT(*) FROM products")
         info["projects_count"]  = db_scalar("SELECT COUNT(*) FROM projects")
